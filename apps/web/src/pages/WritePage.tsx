@@ -1,137 +1,178 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
-import { ErrorBox, Loading } from '../components/StatusViews'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { IconPencil } from '../components/icons'
+import { ErrorBox, Field, FormError, Loading, MatchStatusPill, PageHeader } from '../components/ui'
 import { apiFetch, errorMessage, useApi } from '../lib/api'
-import { CATEGORY_LABELS, formatDateTime, scoreText, toPositiveInt } from '../lib/format'
-import type { Category, Match, Post } from '../lib/types'
-
-const inputClass = 'w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm'
-
-function validate(author: string, title: string, body: string): string | null {
-  if (!author.trim()) return '작성자를 입력해 주세요.'
-  if (author.length > 20) return '작성자는 20자 이하로 입력해 주세요.'
-  if (!title.trim()) return '제목을 입력해 주세요.'
-  if (title.length > 100) return '제목은 100자 이하로 입력해 주세요.'
-  if (!body.trim()) return '내용을 입력해 주세요.'
-  if (body.length > 5000) return '내용은 5000자 이하로 입력해 주세요.'
-  return null
-}
+import { useAuth } from '../lib/auth'
+import { CATEGORY_LABELS, formatDateTime, isCategory, toPositiveInt } from '../lib/format'
+import { useSettings } from '../lib/settings'
+import { btnPrimary, btnSecondary, cardCls, inputCls, selectCls, textareaCls } from '../lib/styles'
+import type { Category, Match, PostDetail } from '../lib/types'
 
 export default function WritePage() {
+  const id = toPositiveInt(useParams().id)
+  const [params] = useSearchParams()
+  if (id) return <EditPost id={id} />
+  const categoryParam = params.get('category') ?? undefined
+  return (
+    <PostForm
+      mode="create"
+      initialCategory={isCategory(categoryParam) ? categoryParam : 'free'}
+      initialMatchId={toPositiveInt(params.get('matchId'))}
+    />
+  )
+}
+
+function EditPost({ id }: { id: number }) {
+  const { user } = useAuth()
+  const { data, loading, error, reload } = useApi<PostDetail>(`/posts/${id}`)
+  if (loading) return <Loading />
+  if (error || !data) return <ErrorBox message={error ?? '글을 찾을 수 없습니다.'} onRetry={reload} />
+  if (!user || (user.id !== data.author.id && user.role !== 'admin'))
+    return <ErrorBox message="작성자와 관리자만 글을 고칠 수 있습니다." />
+  return <PostForm key={data.id} mode="edit" post={data} initialCategory={data.category} initialMatchId={data.matchId} />
+}
+
+type PostFormProps = {
+  mode: 'create' | 'edit'
+  post?: PostDetail
+  initialCategory: Category
+  initialMatchId: number | null
+}
+
+function PostForm({ mode, post, initialCategory, initialMatchId }: PostFormProps) {
+  const { user } = useAuth()
+  const { settings } = useSettings()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const matchId = toPositiveInt(searchParams.get('matchId'))
-  const match = useApi<Match>(matchId === null ? null : `/matches/${matchId}`)
+  const isAdmin = user?.role === 'admin'
+  const [category, setCategory] = useState<Category>(
+    initialCategory === 'notice' && !isAdmin && mode === 'create' ? 'free' : initialCategory,
+  )
+  const [matchId, setMatchId] = useState<number | null>(initialMatchId)
+  const [title, setTitle] = useState(post?.title ?? '')
+  const [body, setBody] = useState(post?.body ?? '')
+  const [errors, setErrors] = useState<{ title?: string; body?: string }>({})
+  const [serverError, setServerError] = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
 
-  const [author, setAuthor] = useState('')
-  const [category, setCategory] = useState<Category>('free')
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const match = useApi<Match>(mode === 'create' && matchId ? `/matches/${matchId}` : null)
+  const linkedMatch = mode === 'edit' ? (post?.match ?? null) : (match.data ?? null)
 
-  const matchReady = matchId === null || match.data !== undefined
-
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    const invalid = validate(author, title, body)
-    if (invalid) {
-      setError(invalid)
-      return
-    }
-    setSubmitting(true)
-    setError(null)
+    const t = title.trim()
+    const b = body.trim()
+    const next: { title?: string; body?: string } = {}
+    if (!t) next.title = '제목을 입력해 주세요.'
+    else if (t.length > 100) next.title = '제목은 100자까지 쓸 수 있습니다.'
+    if (!b) next.body = '내용을 입력해 주세요.'
+    else if (b.length > 5000) next.body = '내용은 5000자까지 쓸 수 있습니다.'
+    setErrors(next)
+    if (next.title || next.body) return
+
+    setSending(true)
+    setServerError(null)
     try {
-      const post = await apiFetch<Post>('/posts', {
-        method: 'POST',
-        body: {
-          category: matchId === null ? category : 'match',
-          ...(matchId === null ? {} : { matchId }),
-          author: author.trim(),
-          title: title.trim(),
-          body,
-        },
-      })
-      navigate(`/board/${post.id}`)
+      const saved =
+        mode === 'edit' && post
+          ? await apiFetch<PostDetail>(`/posts/${post.id}`, { method: 'PATCH', body: { title: t, body: b } })
+          : await apiFetch<PostDetail>('/posts', {
+              method: 'POST',
+              body: { category, ...(matchId && category === 'match' ? { matchId } : {}), title: t, body: b },
+            })
+      navigate(`/posts/${saved.id}`, { replace: true })
     } catch (err) {
-      setError(errorMessage(err))
-      setSubmitting(false)
+      setServerError(errorMessage(err))
+      setSending(false)
     }
   }
 
+  const categories: Category[] = isAdmin ? ['free', 'match', 'notice'] : ['free', 'match']
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-bold">글쓰기</h1>
-
-      {matchId !== null && (
-        <div className="rounded border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
-          {match.loading && <Loading text="경기 정보를 불러오는 중..." />}
-          {match.error && <ErrorBox message={match.error} onRetry={match.reload} />}
-          {match.data && (
-            <p>
-              <span className="text-gray-500">경기:</span> {match.data.leagueName} · {match.data.homeTeam}{' '}
-              {scoreText(match.data)} {match.data.awayTeam} · {formatDateTime(match.data.kickoffAt)}
-            </p>
-          )}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-3 rounded border border-gray-200 bg-white p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm">
-            <span className="mb-1 block text-gray-700">작성자</span>
-            <input
-              value={author}
-              onChange={(e) => setAuthor(e.target.value)}
-              maxLength={20}
-              placeholder="닉네임"
-              className={inputClass}
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-1 block text-gray-700">분류</span>
+    <div>
+      <PageHeader
+        icon={<IconPencil size={20} />}
+        title={mode === 'edit' ? '글 수정' : '글쓰기'}
+        subtitle={
+          mode === 'create' && settings.postApprovalRequired && !isAdmin
+            ? '관리자 승인 후 게시판에 보입니다.'
+            : '스포츠 이야기를 자유롭게 나눠 주세요.'
+        }
+      />
+      <form onSubmit={onSubmit} className={`${cardCls} space-y-4 p-5`} noValidate>
+        <Field label="게시판">
+          {mode === 'create' ? (
             <select
-              value={matchId === null ? category : 'match'}
-              onChange={(e) => setCategory(e.target.value === 'match' ? 'match' : 'free')}
-              disabled={matchId !== null}
-              className={`${inputClass} disabled:bg-gray-100`}
+              value={category}
+              onChange={(e) => {
+                const value = e.target.value
+                if (isCategory(value)) setCategory(value)
+              }}
+              className={`${selectCls} w-48`}
             >
-              <option value="free">{CATEGORY_LABELS.free}</option>
-              <option value="match">{CATEGORY_LABELS.match}</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {CATEGORY_LABELS[c]}
+                </option>
+              ))}
             </select>
-          </label>
-        </div>
-        <label className="block text-sm">
-          <span className="mb-1 block text-gray-700">제목</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} className={inputClass} />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block text-gray-700">
-            내용 <span className="text-xs text-gray-400">({body.length}/5000)</span>
-          </span>
+          ) : (
+            <p className="text-sm font-semibold">{CATEGORY_LABELS[category]}</p>
+          )}
+        </Field>
+
+        {category === 'match' && (matchId || linkedMatch) && (
+          <div className="rounded-lg border border-edge bg-panel px-4 py-3">
+            <p className="mb-1 text-xs text-dim">연결된 경기</p>
+            {match.loading ? (
+              <p className="text-xs text-dim">경기 정보를 불러오는 중...</p>
+            ) : match.error ? (
+              <p className="text-xs text-danger">{match.error}</p>
+            ) : linkedMatch ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-xs text-muted">{linkedMatch.leagueName}</span>
+                <span className="font-semibold">
+                  {linkedMatch.homeTeam} vs {linkedMatch.awayTeam}
+                </span>
+                <span className="text-xs text-dim">{formatDateTime(linkedMatch.kickoffAt)}</span>
+                <MatchStatusPill status={linkedMatch.status} />
+                {mode === 'create' && (
+                  <button type="button" onClick={() => setMatchId(null)} className="ml-auto text-xs text-dim underline hover:text-fg">
+                    연결 해제
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        <Field label="제목" error={errors.title}>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={100}
+            placeholder="제목을 입력해 주세요."
+            className={inputCls}
+          />
+        </Field>
+        <Field label="내용" error={errors.body} hint={`${body.length}/5000`}>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
+            rows={14}
             maxLength={5000}
-            rows={10}
-            className={inputClass}
+            placeholder="내용을 입력해 주세요."
+            className={textareaCls}
           />
-        </label>
-        {error && <ErrorBox message={error} />}
+        </Field>
+        <FormError message={serverError} />
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="rounded border border-gray-300 px-4 py-2 text-sm hover:bg-gray-100"
-          >
+          <Link to={post ? `/posts/${post.id}` : `/board/${category}`} className={btnSecondary}>
             취소
-          </button>
-          <button
-            type="submit"
-            disabled={submitting || !matchReady}
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {submitting ? '등록 중...' : '등록'}
+          </Link>
+          <button type="submit" disabled={sending} className={btnPrimary}>
+            {sending ? '저장 중...' : mode === 'edit' ? '수정 완료' : '등록'}
           </button>
         </div>
       </form>

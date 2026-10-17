@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 const BASE_URL = import.meta.env.VITE_API_URL
 
@@ -14,8 +14,17 @@ function isErrorBody(value: unknown): value is ErrorBody {
   return typeof message === 'string' || Array.isArray(message)
 }
 
+export class ApiError extends Error {
+  status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   body?: unknown
 }
 
@@ -25,11 +34,12 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       method,
+      credentials: 'include',
       headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
-    throw new Error('서버에 연결할 수 없습니다.')
+    throw new ApiError(0, '서버에 연결할 수 없습니다.')
   }
 
   if (!res.ok) {
@@ -39,23 +49,34 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
         ? data.message.join('\n')
         : data.message
       : `요청에 실패했습니다. (${res.status})`
-    throw new Error(message)
+    throw new ApiError(res.status, message)
   }
 
   if (res.status === 204) return undefined as T
-  return (await res.json()) as T
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
 }
 
+export function buildQuery(params: Record<string, string | number | null | undefined>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null || value === undefined || value === '') continue
+    search.set(key, String(value))
+  }
+  const text = search.toString()
+  return text ? `?${text}` : ''
+}
+
 type Result<T> = { key: string; data?: T; error?: string }
 
-export function useApi<T>(path: string | null) {
+export function useApi<T>(path: string | null, refreshKey: string | number = '') {
   const [version, setVersion] = useState(0)
   const [result, setResult] = useState<Result<T> | null>(null)
-  const key = `${path ?? ''}#${version}`
+  const key = `${path ?? ''}#${version}#${refreshKey}`
 
   useEffect(() => {
     if (path === null) return
@@ -73,11 +94,12 @@ export function useApi<T>(path: string | null) {
     }
   }, [path, key])
 
+  const reload = useCallback(() => setVersion((v) => v + 1), [])
   const current = result?.key === key ? result : null
   return {
     data: current?.data,
     error: current?.error,
     loading: path !== null && current === null,
-    reload: () => setVersion((v) => v + 1),
+    reload,
   }
 }

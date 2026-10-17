@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
-import { LeaguesController } from './leagues.controller.js';
+import {
+  AdminLeaguesController,
+  LeaguesController,
+} from './leagues.controller.js';
 import { LeaguesService } from './leagues.service.js';
 
 @Module({
-  controllers: [LeaguesController],
+  controllers: [LeaguesController, AdminLeaguesController],
   providers: [LeaguesService],
 })
 export class LeaguesModule {}

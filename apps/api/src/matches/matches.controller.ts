@@ -1,16 +1,22 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
   Query,
 } from '@nestjs/common';
-import { CreateMatchDto } from './dto/create-match.dto.js';
-import { ListMatchesDto } from './dto/list-matches.dto.js';
-import { UpdateMatchDto } from './dto/update-match.dto.js';
+import { AdminOnly } from '../auth/auth.decorators.js';
+import { ParseIdPipe } from '../common/parse-id.pipe.js';
+import {
+  AdminListMatchesDto,
+  CreateMatchDto,
+  ListMatchesDto,
+  UpdateMatchDto,
+} from './dto/match.dto.js';
 import { MatchesService } from './matches.service.js';
 
 @Controller('matches')
@@ -23,8 +29,19 @@ export class MatchesController {
   }
 
   @Get(':id')
-  get(@Param('id', ParseIntPipe) id: number) {
+  get(@Param('id', ParseIdPipe) id: number) {
     return this.matchesService.get(id);
+  }
+}
+
+@Controller('admin/matches')
+@AdminOnly()
+export class AdminMatchesController {
+  constructor(private readonly matchesService: MatchesService) {}
+
+  @Get()
+  list(@Query() query: AdminListMatchesDto) {
+    return this.matchesService.listAdmin(query);
   }
 
   @Post()
@@ -33,7 +50,13 @@ export class MatchesController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateMatchDto) {
+  update(@Param('id', ParseIdPipe) id: number, @Body() dto: UpdateMatchDto) {
     return this.matchesService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(@Param('id', ParseIdPipe) id: number) {
+    await this.matchesService.remove(id);
   }
 }

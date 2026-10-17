@@ -1,104 +1,119 @@
-import { Link, useSearchParams } from 'react-router'
-import PostList from '../components/PostList'
-import { Empty, ErrorBox, Loading } from '../components/StatusViews'
-import { useApi } from '../lib/api'
-import { toPositiveInt } from '../lib/format'
-import type { Category, PostList as PostListData } from '../lib/types'
+import { useState, type FormEvent } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router'
+import { IconBall, IconChat, IconMegaphone, IconSearch } from '../components/icons'
+import { PostTable } from '../components/posts'
+import { EmptyState, ErrorBox, Loading, PageHeader, Pagination } from '../components/ui'
+import { buildQuery, useApi } from '../lib/api'
+import { useAuth } from '../lib/auth'
+import { CATEGORY_LABELS, isCategory, toPageSize, toPositiveInt } from '../lib/format'
+import { btnPrimary, btnSecondary, inputCls } from '../lib/styles'
+import type { Category, Paged, PostSummary } from '../lib/types'
+import NotFoundPage from './NotFoundPage'
 
-const TABS: { value: Category | null; label: string }[] = [
-  { value: null, label: '전체' },
-  { value: 'free', label: '자유' },
-  { value: 'match', label: '경기 이야기' },
-]
-
-function toCategory(value: string | null): Category | null {
-  return value === 'free' || value === 'match' ? value : null
+const SUBTITLES: Record<Category, string> = {
+  notice: '운영진이 전하는 소식입니다.',
+  free: '스포츠에 관한 자유로운 이야기를 나눠요.',
+  match: '경기를 보며 생각을 나눠요.',
 }
 
+const ICONS: Record<Category, typeof IconChat> = { notice: IconMegaphone, free: IconChat, match: IconBall }
+
 export default function BoardPage() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const category = toCategory(searchParams.get('category'))
-  const page = toPositiveInt(searchParams.get('page')) ?? 1
+  const { category } = useParams()
+  if (!isCategory(category)) return <NotFoundPage />
+  return <Board key={category} category={category} />
+}
 
-  const query = new URLSearchParams({ page: String(page) })
-  if (category) query.set('category', category)
-  const posts = useApi<PostListData>(`/posts?${query.toString()}`)
+function Board({ category }: { category: Category }) {
+  const { user } = useAuth()
+  const [params, setParams] = useSearchParams()
+  const q = params.get('q') ?? ''
+  const page = toPositiveInt(params.get('page')) ?? 1
+  const pageSize = toPageSize(params.get('pageSize'))
+  const [search, setSearch] = useState(q)
 
-  const go = (nextCategory: Category | null, nextPage: number) => {
-    const next = new URLSearchParams()
-    if (nextCategory) next.set('category', nextCategory)
-    if (nextPage > 1) next.set('page', String(nextPage))
-    setSearchParams(next)
+  const { data, loading, error, reload } = useApi<Paged<PostSummary>>(
+    `/posts${buildQuery({ category, q: q || null, page, pageSize })}`,
+  )
+
+  const canWrite = category !== 'notice' || user?.role === 'admin'
+  const Icon = ICONS[category]
+
+  const update = (patch: Record<string, string | number | null>) => {
+    const next = new URLSearchParams(params)
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null || value === '') next.delete(key)
+      else next.set(key, String(value))
+    }
+    setParams(next)
   }
 
-  const totalPages = posts.data ? Math.max(1, Math.ceil(posts.data.total / posts.data.pageSize)) : 1
+  const onSearch = (e: FormEvent) => {
+    e.preventDefault()
+    update({ q: search.trim() || null, page: null })
+  }
+
+  const writeButton = canWrite ? (
+    <Link to={`/write?category=${category}`} className={btnPrimary}>
+      글쓰기
+    </Link>
+  ) : null
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">게시판</h1>
-        <Link to="/board/write" className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
-          글쓰기
-        </Link>
-      </div>
+    <div>
+      <PageHeader icon={<Icon size={20} />} title={CATEGORY_LABELS[category]} subtitle={SUBTITLES[category]} action={writeButton} />
 
-      <div className="flex gap-1 border-b border-gray-200">
-        {TABS.map((tab) => (
+      <form onSubmit={onSearch} className="mb-4 flex gap-2">
+        <div className="relative max-w-sm flex-1">
+          <IconSearch className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="제목으로 검색"
+            aria-label="제목 검색"
+            className={`${inputCls} pl-9`}
+          />
+        </div>
+        <button type="submit" className={btnSecondary}>
+          검색
+        </button>
+        {q && (
           <button
-            key={tab.label}
             type="button"
-            onClick={() => go(tab.value, 1)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-              category === tab.value
-                ? 'border-blue-600 font-semibold text-blue-700'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
+            className={btnSecondary}
+            onClick={() => {
+              setSearch('')
+              update({ q: null, page: null })
+            }}
           >
-            {tab.label}
+            초기화
           </button>
-        ))}
-      </div>
+        )}
+      </form>
 
-      {posts.loading && <Loading />}
-      {posts.error && <ErrorBox message={posts.error} onRetry={posts.reload} />}
-      {posts.data &&
-        (posts.data.items.length === 0 ? (
-          <Empty text="글이 없습니다." />
-        ) : (
-          <>
-            <PostList posts={posts.data.items} />
-            <nav className="flex flex-wrap justify-center gap-1" aria-label="페이지">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => go(category, page - 1)}
-                className="rounded border border-gray-300 bg-white px-3 py-1 text-sm disabled:opacity-40"
-              >
-                이전
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => go(category, n)}
-                  className={`rounded border px-3 py-1 text-sm ${
-                    n === page ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 bg-white'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => go(category, page + 1)}
-                className="rounded border border-gray-300 bg-white px-3 py-1 text-sm disabled:opacity-40"
-              >
-                다음
-              </button>
-            </nav>
-          </>
-        ))}
+      {loading ? (
+        <Loading />
+      ) : error ? (
+        <ErrorBox message={error} onRetry={reload} />
+      ) : !data || data.items.length === 0 ? (
+        <EmptyState
+          icon={<Icon size={20} />}
+          title={q ? '검색 결과가 없습니다' : '아직 글이 없습니다'}
+          description={q ? '다른 검색어로 찾아보세요.' : canWrite ? '첫 번째 글을 남겨 보세요.' : undefined}
+          action={q ? undefined : writeButton}
+        />
+      ) : (
+        <>
+          <PostTable posts={data.items} />
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={data.total}
+            onPage={(p) => update({ page: p })}
+            onPageSize={(size) => update({ pageSize: size, page: null })}
+          />
+        </>
+      )}
     </div>
   )
 }

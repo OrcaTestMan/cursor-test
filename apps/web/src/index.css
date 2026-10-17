@@ -1,1 +1,44 @@
 @import "tailwindcss";
+
+@theme {
+  --color-bg: #131517;
+  --color-panel: #191c1f;
+  --color-card: #1f2327;
+  --color-card-hover: #272c31;
+  --color-edge: #2e343a;
+  --color-edge-soft: #24282d;
+  --color-input: #101214;
+  --color-fg: #f2f4f6;
+  --color-dim: #9aa3ad;
+  --color-muted: #666f79;
+  --color-accent: #22e07a;
+  --color-accent-strong: #16c964;
+  --color-accent-soft: #103526;
+  --color-on-accent: #07251a;
+  --color-danger: #f4434f;
+  --color-danger-soft: #391420;
+  --color-gold: #ffb80c;
+  --color-gold-soft: #3a2c08;
+  --color-info: #3b82f6;
+  --color-info-soft: #12243d;
+
+  --font-sans: "Pretendard", "Noto Sans KR", -apple-system, "Segoe UI", sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+}
