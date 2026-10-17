@@ -1,0 +1,36 @@
+---
+description: TypeScript 모노레포의 스택, 폴더, Yarn, Drizzle 규칙
+alwaysApply: true
+---
+
+# 프로젝트 규칙
+
+TypeScript 모노레포다. 화면은 `apps/web`, API는 `apps/api`다. 식별자, 파일명, 커밋 메시지는 영어다. 사용자에게 보이는 문구와 설명은 한국어다.
+
+## 스택
+
+- 패키지 매니저: Yarn 4. `npm`, `pnpm`, `bun` 명령은 실행하지 않는다.
+- 화면: Vite, React, TypeScript, `react-router`, Tailwind CSS (`@tailwindcss/vite`)
+- API: NestJS, TypeScript, REST JSON, 전역 prefix `/api`
+- 데이터베이스: PostgreSQL. 로컬은 루트 `docker-compose.yml`
+- ORM: Drizzle. 패키지는 `drizzle-orm`, `drizzle-kit`, `postgres`
+- Prisma, GraphQL, tRPC, Next.js, UI 키트, 상태관리 라이브러리는 추가하지 않는다.
+- 사용자가 요청하지 않은 라이브러리는 설치하지 않는다.
+
+## 코드
+
+- 화면은 함수 컴포넌트와 Tailwind 클래스만 사용한다.
+- API 호출 기준 주소는 `import.meta.env.VITE_API_URL`이다.
+- API 기능은 Module, Controller, Service로 나눈다.
+- 요청 본문은 DTO 클래스와 `ValidationPipe`로 검증한다.
+- 쿼리는 Service에서 `DbService`로만 실행한다. Controller에서 데이터베이스에 접근하지 않는다.
+- 스키마는 `apps/api/src/db/schema.ts`만 수정한다.
+- 스키마를 바꾸면 `yarn workspace api db:generate`로 마이그레이션 파일을 만들고, `yarn workspace api db:migrate`로 적용한다. `drizzle-kit push`는 사용하지 않는다.
+
+## 환경
+
+의존성, `.env`, PostgreSQL, Drizzle 마이그레이션 중 하나라도 없으면 `.cursor/skills/setup/SKILL.md`를 읽고 그 절차만 수행한다. 개발 서버는 사용자가 실행을 요청하기 전에는 켜지 않는다.
+
+## 배포
+
+최종 배포는 Docker다. 배포 파일이나 `yarn docker:build`가 없으면 `.cursor/skills/deploy/SKILL.md`를 읽고 그 절차만 수행한다. 로컬 `docker-compose.yml`은 PostgreSQL만 둔다. 배포 이미지를 개발 서버 대신 실행하지 않는다.

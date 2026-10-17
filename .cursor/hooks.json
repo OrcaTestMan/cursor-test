@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/save-last-prompt.ps1"
+      }
+    ],
+    "stop": [
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/auto-sync.ps1",
+        "loop_limit": 1
+      }
+    ]
+  }
+}

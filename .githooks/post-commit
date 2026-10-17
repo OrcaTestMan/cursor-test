@@ -1,0 +1,8 @@
+#!/bin/sh
+# 커밋 직후 origin이 있으면 push (실패해도 커밋은 유지)
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || exit 0
+git remote get-url origin >/dev/null 2>&1 || exit 0
+git push origin "$branch" 2>/dev/null || {
+  echo "auto-sync: push failed (network or auth)" >&2
+  exit 0
+}

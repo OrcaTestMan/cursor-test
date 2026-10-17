@@ -1,0 +1,8 @@
+#!/bin/sh
+# 비밀·환경 파일 커밋 차단 (.env.example 은 허용)
+blocked=$(git diff --cached --name-only | grep -E '(^|/)\.env($|\.)|credentials|\.pem$' | grep -v '\.env\.example$' || true)
+if [ -n "$blocked" ]; then
+  echo "pre-commit: .env / credentials / key files cannot be committed" >&2
+  echo "$blocked" >&2
+  exit 1
+fi
