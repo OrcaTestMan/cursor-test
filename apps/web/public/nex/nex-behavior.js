@@ -2469,9 +2469,9 @@ function makeRiskChip(label, on, attrs = {}) {
   return button
 }
 
-// NEX 원본 사이드바 종목 (risk_files i18n)
+// 원본 사이드바 종목 (risk_files i18n)
 const RISK_SPORTS = ['축구', '농구', '야구', '배구', '아이스하키', '테니스', 'e스포츠']
-// NEX 원본 마켓 카탈로그 labels (risk_files market defs)
+// 원본 마켓 카탈로그 labels (risk_files market defs)
 const RISK_MARKETS = [
   '승무패', '머니라인', '오버언더', '핸디캡', '경기승자', '양팀득점',
   '홈팀 오버언더', '원정팀 오버언더', '코너킥 오버언더', '코너킥 핸디캡',
