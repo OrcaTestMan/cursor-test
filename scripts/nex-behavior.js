@@ -2554,17 +2554,23 @@ function riskPickClass(on) {
     : 'rounded-lg border border-edge bg-card px-3 py-2.5 text-left font-bold text-dim hover:text-fg hover:bg-card-hover'
 }
 
-function paintRiskPickButton(item, value, count, on) {
+function paintRiskPickButton(item, value, stats, on) {
+  const count = Number(stats?.count || 0)
+  const stake = Number(stats?.stake || 0)
   item.className = riskPickClass(on)
-  item.style.minHeight = '52px'
+  item.style.minHeight = '58px'
   item.replaceChildren()
   const name = document.createElement('span')
   name.style.cssText = 'display:block;font-size:12px;line-height:1.3;white-space:normal;word-break:keep-all'
   name.textContent = value
-  const num = document.createElement('span')
-  num.style.cssText = 'display:block;margin-top:4px;font-size:11px;font-weight:900;font-variant-numeric:tabular-nums;opacity:.75'
-  num.textContent = `${count}건`
-  item.append(name, num)
+  const meta = document.createElement('span')
+  meta.style.cssText = 'display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:11px;font-weight:900;font-variant-numeric:tabular-nums;opacity:.8'
+  const countEl = document.createElement('span')
+  countEl.textContent = `${count}건`
+  const stakeEl = document.createElement('span')
+  stakeEl.textContent = riskMoney(stake)
+  meta.append(countEl, stakeEl)
+  item.append(name, meta)
 }
 
 function openRiskFilterCard(board, dim, lines) {
@@ -2617,13 +2623,15 @@ function openRiskFilterCard(board, dim, lines) {
   const grid = document.createElement('div')
   const cols = dim === 'when' ? 2 : dim === 'sport' ? 3 : 3
   grid.style.cssText = `display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:8px`
-  meta.values.forEach((value) => {
+  const ranked = meta.values
+    .map((value) => ({ value, stats: riskDimStats(lines, meta.key, value) }))
+    .sort((a, b) => b.stats.stake - a.stats.stake || b.stats.count - a.stats.count || a.value.localeCompare(b.value, 'ko'))
+  ranked.forEach(({ value, stats }) => {
     const on = picks.has(value)
-    const n = countRiskDim(lines, meta.key, value)
     const item = document.createElement('button')
     item.type = 'button'
     item.dataset.riskCardPick = value
-    paintRiskPickButton(item, value, n, on)
+    paintRiskPickButton(item, value, stats, on)
     grid.append(item)
   })
 
@@ -2658,7 +2666,7 @@ function openRiskFilterCard(board, dim, lines) {
     if (event.target.closest('[data-risk-card-all]')) {
       picks.clear()
       grid.querySelectorAll('[data-risk-card-pick]').forEach((node) => {
-        paintRiskPickButton(node, node.dataset.riskCardPick, countRiskDim(lines, meta.key, node.dataset.riskCardPick), false)
+        paintRiskPickButton(node, node.dataset.riskCardPick, riskDimStats(lines, meta.key, node.dataset.riskCardPick), false)
       })
       return
     }
@@ -2667,7 +2675,7 @@ function openRiskFilterCard(board, dim, lines) {
       const value = pickBtn.dataset.riskCardPick
       if (picks.has(value)) picks.delete(value)
       else picks.add(value)
-      paintRiskPickButton(pickBtn, value, countRiskDim(lines, meta.key, value), picks.has(value))
+      paintRiskPickButton(pickBtn, value, riskDimStats(lines, meta.key, value), picks.has(value))
       return
     }
     if (event.target.closest('[data-risk-card-apply]')) {
@@ -3001,12 +3009,25 @@ function paintRiskWatchTable(board, lines) {
   }))
 }
 
-function countRiskDim(lines, key, value) {
+function riskDimRows(lines, key, value) {
   if (key === 'market') {
     const norm = riskNormMarket(value)
-    return lines.filter((row) => riskNormMarket(row.market) === norm).length
+    return lines.filter((row) => riskNormMarket(row.market) === norm)
   }
-  return lines.filter((row) => row[key] === value).length
+  const bare = riskBare(value)
+  return lines.filter((row) => riskBare(row[key]) === bare)
+}
+
+function riskDimStats(lines, key, value) {
+  const rows = riskDimRows(lines, key, value)
+  return {
+    count: rows.length,
+    stake: rows.reduce((sum, row) => sum + Number(row.stake || 0), 0),
+  }
+}
+
+function countRiskDim(lines, key, value) {
+  return riskDimStats(lines, key, value).count
 }
 
 function paintRiskWatchFilters(board) {
