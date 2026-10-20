@@ -2681,7 +2681,7 @@ function openRiskFilterCard(board, dim, lines) {
 
 function buildRiskWatchBoard() {
   const board = document.createElement('div')
-  board.dataset.riskBoard = 'watch6'
+  board.dataset.riskBoard = 'watch7'
   board.dataset.riskSport = '__all__'
   board.dataset.riskMarket = '__all__'
   board.dataset.riskWhen = '__all__'
@@ -2701,14 +2701,24 @@ function buildRiskWatchBoard() {
 
   const filters = document.createElement('div')
   filters.dataset.riskFilters = '1'
-  filters.className = 'flex flex-col items-center gap-2 px-4 pt-3'
+  filters.className = 'flex w-full flex-wrap items-center justify-between gap-3 px-4 pt-3'
 
-  const top = document.createElement('div')
-  top.className = 'flex flex-wrap items-center justify-center gap-2'
+  const left = document.createElement('div')
+  left.dataset.riskPickRows = '1'
+  left.className = 'flex min-w-0 flex-wrap items-center gap-3'
   const count = document.createElement('span')
   count.dataset.riskCount = '1'
   count.className = 'shrink-0 rounded-md bg-card px-2 py-0.5 text-[12px] font-black text-dim'
   count.textContent = '0'
+  left.append(
+    count,
+    makeRiskFilterTrigger('종목', 'sport'),
+    makeRiskFilterTrigger('유형', 'market'),
+    makeRiskFilterTrigger('구분', 'when'),
+  )
+
+  const right = document.createElement('div')
+  right.className = 'ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2'
   const search = document.createElement('input')
   search.type = 'search'
   search.dataset.riskSearch = '1'
@@ -2727,18 +2737,9 @@ function buildRiskWatchBoard() {
     option.textContent = label
     sort.append(option)
   })
-  top.append(count, search, sort)
+  right.append(search, sort)
 
-  const rows = document.createElement('div')
-  rows.dataset.riskPickRows = '1'
-  rows.className = 'flex w-full flex-wrap items-center justify-center gap-3'
-  rows.append(
-    makeRiskFilterTrigger('종목', 'sport'),
-    makeRiskFilterTrigger('유형', 'market'),
-    makeRiskFilterTrigger('구분', 'when'),
-  )
-
-  filters.append(top, rows)
+  filters.append(left, right)
 
   const wrap = document.createElement('div')
   wrap.className = 'overflow-x-auto px-4 pb-4 pt-3'
@@ -2755,7 +2756,7 @@ function reshapeRisk() {
   if (!location.pathname.endsWith('/risk.html')) return
   ensureRiskSummaryCards()
   const existing = document.querySelector('[data-risk-board]')
-  if (existing?.dataset.riskBoard === 'watch6') return
+  if (existing?.dataset.riskBoard === 'watch7') return
   if (existing) existing.remove()
   const stack = document.querySelector('main > .space-y-4')
   if (!stack) return
@@ -3031,7 +3032,7 @@ function paintRiskWatchFilters(board) {
 function paintRiskMonitor(data = store()) {
   if (!location.pathname.endsWith('/risk.html')) return
   reshapeRisk()
-  const board = document.querySelector('[data-risk-board="watch6"]')
+  const board = document.querySelector('[data-risk-board="watch7"]')
   if (!board) return
   bindRiskWatchFilters(board)
   const rows = openRiskRows(data)
