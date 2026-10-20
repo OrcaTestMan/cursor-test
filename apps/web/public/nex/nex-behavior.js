@@ -2468,9 +2468,9 @@ function makeRiskChip(label, on, attrs = {}) {
 
 function buildRiskWatchBoard() {
   const board = document.createElement('div')
-  board.dataset.riskBoard = 'watch'
+  board.dataset.riskBoard = 'watch2'
   board.dataset.riskMode = 'all'
-  board.dataset.riskPick = ''
+  board.dataset.riskFilterPick = ''
   board.dataset.riskQ = ''
   board.dataset.riskSort = 'risk'
 
@@ -2549,7 +2549,7 @@ function reshapeRisk() {
   if (!location.pathname.endsWith('/risk.html')) return
   ensureRiskSummaryCards()
   const existing = document.querySelector('[data-risk-board]')
-  if (existing?.dataset.riskBoard === 'watch') return
+  if (existing?.dataset.riskBoard === 'watch2') return
   if (existing) existing.remove()
   const stack = document.querySelector('main > .space-y-4')
   if (!stack) return
@@ -2716,17 +2716,23 @@ function bindRiskWatchFilters(board) {
   if (board.dataset.riskBound === '1') return
   board.dataset.riskBound = '1'
   board.addEventListener('click', (event) => {
-    const modeBtn = event.target.closest('[data-risk-mode]')
+    const modeBtn = event.target.closest('button[data-risk-mode]')
     if (modeBtn) {
-      board.dataset.riskMode = modeBtn.dataset.riskMode || 'all'
-      board.dataset.riskPick = ''
+      const nextMode = modeBtn.dataset.riskMode || 'all'
+      board.dataset.riskMode = nextMode
+      board.dataset.riskFilterPick = ''
+      if (nextMode === 'sport' || nextMode === 'market') {
+        const rows = riskWatchLines(openRiskRows(store()))
+        const key = nextMode === 'sport' ? 'sport' : 'market'
+        const first = rows.map((row) => row[key]).find(Boolean)
+        if (first) board.dataset.riskFilterPick = first
+      }
       paintRiskMonitor()
       return
     }
-    const pickBtn = event.target.closest('[data-risk-pick]')
+    const pickBtn = event.target.closest('button[data-risk-pick]')
     if (pickBtn) {
-      const next = pickBtn.dataset.riskPick || ''
-      board.dataset.riskPick = board.dataset.riskPick === next ? '' : next
+      board.dataset.riskFilterPick = pickBtn.dataset.riskPick || ''
       paintRiskMonitor()
     }
   })
@@ -2787,7 +2793,7 @@ function paintRiskWatchTable(board, lines) {
 
 function paintRiskWatchFilters(board, lines) {
   const mode = board.dataset.riskMode || 'all'
-  const pick = board.dataset.riskPick || ''
+  const pick = board.dataset.riskFilterPick || ''
   const modes = board.querySelector('[data-risk-modes]')
   const picks = board.querySelector('[data-risk-picks]')
   const search = board.querySelector('[data-risk-search]')
@@ -2808,11 +2814,12 @@ function paintRiskWatchFilters(board, lines) {
   }
   const key = mode === 'sport' ? 'sport' : 'market'
   const values = [...new Set(lines.map((row) => row[key]).filter(Boolean))]
+  const pickAll = !pick || pick === '__all__'
   picks.replaceChildren(
-    makeRiskChip('전체', !pick, { riskPick: '' }),
+    makeRiskChip('전체', pickAll, { riskPick: '__all__' }),
     ...values.map((value) => {
       const n = lines.filter((row) => row[key] === value).length
-      return makeRiskChip(`${testTag(value)} ${n}`, pick === value, { riskPick: value })
+      return makeRiskChip(`${testTag(value)} ${n}`, !pickAll && pick === value, { riskPick: value })
     }),
   )
 }
@@ -2820,19 +2827,23 @@ function paintRiskWatchFilters(board, lines) {
 function paintRiskMonitor(data = store()) {
   if (!location.pathname.endsWith('/risk.html')) return
   reshapeRisk()
-  const board = document.querySelector('[data-risk-board="watch"]')
+  const board = document.querySelector('[data-risk-board="watch2"]')
   if (!board) return
   bindRiskWatchFilters(board)
   const rows = openRiskRows(data)
   const lines = riskWatchLines(rows)
   paintRiskWatchFilters(board, lines)
   const mode = board.dataset.riskMode || 'all'
-  const pick = board.dataset.riskPick || ''
+  const pick = board.dataset.riskFilterPick || ''
   const q = (board.dataset.riskQ || '').toLowerCase()
   const sort = board.dataset.riskSort || 'risk'
   let filtered = lines.slice()
-  if (mode === 'sport' && pick) filtered = filtered.filter((row) => row.sport === pick)
-  if (mode === 'market' && pick) filtered = filtered.filter((row) => row.market === pick)
+  if (mode === 'sport' && pick && pick !== '__all__') {
+    filtered = filtered.filter((row) => row.sport === pick)
+  }
+  if (mode === 'market' && pick && pick !== '__all__') {
+    filtered = filtered.filter((row) => row.market === pick)
+  }
   if (q) {
     filtered = filtered.filter((row) =>
       [row.league, row.sport, row.home, row.away, row.match, row.market, row.when]
@@ -4347,6 +4358,7 @@ function init() {
     main.addEventListener('click', (event) => {
       const button = event.target.closest('button')
       if (!button || !main.contains(button) || button.closest('thead') || button.dataset.bet || button.dataset.user) return
+      if (button.closest('[data-risk-board]')) return
       if (labelOf(button) === '심사') {
         openReview(button.closest('tr'))
         return
