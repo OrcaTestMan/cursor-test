@@ -23,3 +23,5 @@ coverage
 .cursor/last-user-request.txt
 .cursor/auto-sync.log
 .cursor/commit-msg.tmp
+
+apps/api/uploads/

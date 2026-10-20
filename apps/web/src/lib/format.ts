@@ -1,4 +1,16 @@
-import type { Category, ContentStatus, InquiryStatus, Match, MatchStatus, Role, UserStatus } from './types'
+import type {
+  Category,
+  ContentStatus,
+  InquiryStatus,
+  Match,
+  MatchStatus,
+  NotificationType,
+  PredictionPick,
+  ReportReason,
+  Role,
+  SearchType,
+  UserStatus,
+} from './types'
 
 const TIME_ZONE = 'Asia/Seoul'
 
@@ -73,7 +85,10 @@ export function todayKst(): string {
 }
 
 export function isDay(value: string | null): value is string {
-  return value !== null && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const [year, month, date] = value.split('-').map(Number)
+  const utc = new Date(Date.UTC(year, month - 1, date))
+  return utc.getUTCFullYear() === year && utc.getUTCMonth() === month - 1 && utc.getUTCDate() === date
 }
 
 export function addDays(day: string, amount: number): string {
@@ -115,6 +130,9 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   notice: '공지사항',
   free: '자유게시판',
   match: '경기 이야기',
+  humor: '유머',
+  review: '직관·후기',
+  news: '뉴스·소식',
 }
 
 export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
@@ -136,10 +154,89 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const USER_STATUS_LABELS: Record<UserStatus, string> = {
   active: '활성',
   blocked: '차단',
+  deleted: '탈퇴',
+}
+
+export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
+  abuse: '욕설·비방',
+  obscene: '음란',
+  spam: '광고·도배',
+  privacy: '개인정보 노출',
+  etc: '기타',
+}
+
+export const PICK_LABELS: Record<PredictionPick, string> = {
+  home: '홈 승',
+  draw: '무승부',
+  away: '원정 승',
+}
+
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  comment: '댓글',
+  reply: '답글',
+  inquiry_answer: '문의 답변',
+  message: '쪽지',
+  report_result: '신고 결과',
+  mention: '멘션',
+  subscribe: '구독',
+  follow: '팔로우',
+}
+
+export const PREDICTION_RESULT_LABELS: Record<'hit' | 'miss' | 'pending', string> = {
+  hit: '적중',
+  miss: '미적중',
+  pending: '대기',
+}
+
+export const SEARCH_TYPE_LABELS: Record<SearchType, string> = {
+  title: '제목',
+  title_body: '제목+내용',
+  author: '글쓴이',
+}
+
+export function isSearchType(value: string | null): value is SearchType {
+  return value === 'title' || value === 'title_body' || value === 'author'
+}
+
+/** `방금 전`, `5분 전`, `3시간 전`, `2일 전`, 그보다 오래되면 날짜 */
+export function formatRelative(iso: string, now = Date.now()): string {
+  const diff = Math.max(0, now - new Date(iso).getTime())
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return '방금 전'
+  if (min < 60) return `${min}분 전`
+  const hour = Math.floor(min / 60)
+  if (hour < 24) return `${hour}시간 전`
+  const day = Math.floor(hour / 24)
+  if (day < 7) return `${day}일 전`
+  return formatDate(iso)
+}
+
+/** 승률 0~1 → `.625`, 1이면 `1.000` */
+export function formatWinRate(rate: number): string {
+  const text = rate.toFixed(3)
+  return text.startsWith('0') ? text.slice(1) : text
+}
+
+/** 금칙어 오류 메시지(`... 포함되어 있습니다: "단어"`)에서 단어를 꺼낸다 */
+export function forbiddenWordOf(message: string): string | null {
+  const found = /사용할 수 없는 단어가 포함되어 있습니다: "(.+)"/.exec(message)
+  return found ? found[1] : null
+}
+
+/** 띄어쓰기와 대소문자를 무시하고 단어가 들어 있는지 본다 (서버 금칙어 규칙과 같음) */
+export function containsWord(text: string, word: string): boolean {
+  const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+  const w = norm(word)
+  return w.length > 0 && norm(text).includes(w)
+}
+
+/** 비율 계산. 합이 0이면 0 */
+export function percent(part: number, total: number): number {
+  return total > 0 ? Math.round((part / total) * 100) : 0
 }
 
 export function isCategory(value: string | undefined): value is Category {
-  return value === 'notice' || value === 'free' || value === 'match'
+  return value !== undefined && value in CATEGORY_LABELS
 }
 
 export function isMatchStatus(value: string | null): value is MatchStatus {
@@ -179,4 +276,9 @@ export function toPageSize(value: string | null): number {
 
 export function safeNext(value: string | null): string {
   return value && value.startsWith('/') && !value.startsWith('//') ? value : '/'
+}
+
+export function safeAdminNext(value: string | null): string {
+  const next = safeNext(value)
+  return next.startsWith('/admin') && !next.startsWith('/admin/login') ? next : '/admin'
 }

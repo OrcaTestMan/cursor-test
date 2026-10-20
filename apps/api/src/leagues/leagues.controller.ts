@@ -7,10 +7,15 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { AdminOnly } from '../auth/auth.decorators.js';
 import { ParseIdPipe } from '../common/parse-id.pipe.js';
-import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto.js';
+import {
+  AdminListLeaguesDto,
+  CreateLeagueDto,
+  UpdateLeagueDto,
+} from './dto/league.dto.js';
 import { LeaguesService } from './leagues.service.js';
 
 @Controller('leagues')
@@ -27,6 +32,11 @@ export class LeaguesController {
 @AdminOnly()
 export class AdminLeaguesController {
   constructor(private readonly leaguesService: LeaguesService) {}
+
+  @Get()
+  list(@Query() query: AdminListLeaguesDto) {
+    return this.leaguesService.listAdmin(query);
+  }
 
   @Post()
   create(@Body() dto: CreateLeagueDto) {

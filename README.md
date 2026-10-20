@@ -50,11 +50,12 @@ yarn dev
 
 Windows 명령 프롬프트에서는 `dev.cmd`를 실행한다. 한글 폴더 경로가 깨지지 않도록 코드 페이지를 UTF-8로 바꾸고, PostgreSQL을 띄운 뒤 `yarn dev`를 실행한다.
 
-- 화면: http://localhost:5173
-- 관리자 콘솔: http://localhost:5173/admin
+- 회원 사이트: http://localhost:5173 (`/login`)
+- 관리자 콘솔: http://localhost:5173/admin (`/admin/login`)
 - API: http://localhost:3000/api/health
 - 첫 관리자 계정은 `apps/api/.env`의 `ADMIN_USERNAME`, `ADMIN_PASSWORD`로 API가 켜질 때 만들어진다.
 - 예시 회원: `user1` / `user1234!`, `user2` / `user1234!`
+- 로컬 테스트 계정: `test` / `test` (API가 켜질 때 맞춘다)
 - API 주소와 데이터 모양은 [API 계약](docs/API.md)에 있다.
 
 ## 스크립트

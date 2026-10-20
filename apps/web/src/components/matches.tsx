@@ -35,8 +35,8 @@ export function MatchCard({ match }: { match: Match }) {
   return (
     <Link
       to={`/matches/${match.id}`}
-      className={`block rounded-xl border bg-card p-4 transition-colors hover:bg-card-hover ${
-        match.status === 'live' ? 'border-danger/50' : 'border-edge'
+      className={`block rounded-[16px] border bg-panel p-5 transition-colors hover:bg-card-hover ${
+        match.status === 'live' ? 'border-danger/50' : 'border-white/10'
       }`}
     >
       <div className="mb-3 flex items-center justify-between gap-2">

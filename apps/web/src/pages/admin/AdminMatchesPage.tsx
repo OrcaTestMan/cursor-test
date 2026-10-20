@@ -1,49 +1,167 @@
-import { useState, type FormEvent } from 'react'
-import { IconBall, IconPlus, IconSearch } from '../../components/icons'
-import { EmptyState, ErrorBox, Field, FormError, Loading, MatchStatusPill, Modal, PageHeader, Pagination, SegmentedTabs, type TabItem } from '../../components/ui'
+import { useEffect, useState, type FormEvent } from 'react'
+import { EmptyFilterActions, FilterChoice, ListFilterBar, OptionButtons, dateRangeChip, useRestoredDateFilter, type FilterChip } from '../../components/filters'
+import { IconBall, IconPlus } from '../../components/icons'
+import { EmptyState, ErrorBox, Field, FormError, Loading, MatchStatusPill, Modal, PageHeader, Pagination } from '../../components/ui'
 import { apiFetch, buildQuery, errorMessage, useApi } from '../../lib/api'
-import { formatShort, fromKstInput, hasScore, isDay, isMatchStatus, MATCH_STATUS_LABELS, scoreText, toKstInput, toPositiveInt } from '../../lib/format'
+import { formatShort, fromKstInput, hasScore, isMatchStatus, MATCH_STATUS_LABELS, scoreText, toKstInput, toPositiveInt } from '../../lib/format'
+import { dateFilterQuery, emptyDateFilter, resultCountText, serializeDateFilter, uniqueSorted, withAllPeriod, withToday } from '../../lib/list-query'
 import { useQueryState } from '../../lib/params'
 import { btnPrimary, btnSecondary, btnSmDanger, btnSmSecondary, inputCls, selectCls, tdCls, thCls, trCls } from '../../lib/styles'
-import type { League, Match, MatchStatus, Paged } from '../../lib/types'
+import type { League, Match, MatchStatus, Paged, Team } from '../../lib/types'
 
-type StatusTab = MatchStatus | 'all'
+type Extra = {
+  sport: string
+  leagueId: string
+  teamId: string
+  status: MatchStatus | ''
+  side: '' | 'home' | 'away'
+  hasScore: '' | 'true'
+  missingScore: '' | 'true'
+}
 
-const STATUS_TABS: TabItem<StatusTab>[] = [
-  { value: 'all', label: '전체' },
-  ...(Object.keys(MATCH_STATUS_LABELS) as MatchStatus[]).map((s) => ({ value: s, label: MATCH_STATUS_LABELS[s] })),
-]
+const EMPTY_EXTRA: Extra = {
+  sport: '',
+  leagueId: '',
+  teamId: '',
+  status: '',
+  side: '',
+  hasScore: '',
+  missingScore: '',
+}
+
+function extraFromParams(get: (key: string) => string): Extra {
+  const statusParam = get('status')
+  const side = get('side')
+  return {
+    sport: get('sport'),
+    leagueId: get('leagueId'),
+    teamId: get('teamId'),
+    status: isMatchStatus(statusParam) ? statusParam : '',
+    side: side === 'home' || side === 'away' ? side : '',
+    hasScore: get('hasScore') === 'true' ? 'true' : '',
+    missingScore: get('missingScore') === 'true' ? 'true' : '',
+  }
+}
+
+function extraQuery(extra: Extra): Record<string, string | null> {
+  return {
+    sport: extra.sport || null,
+    leagueId: extra.leagueId || null,
+    teamId: extra.teamId || null,
+    status: extra.status || null,
+    side: extra.side || null,
+    hasScore: extra.hasScore || null,
+    missingScore: extra.missingScore || null,
+  }
+}
+
+function advancedCountOf(extra: Extra) {
+  return [extra.teamId, extra.side, extra.hasScore, extra.missingScore].filter(Boolean).length
+}
+
+function linkedExtra(extra: Extra, leagues: League[], teams: Team[]): Extra {
+  const league = leagues.find((item) => String(item.id) === extra.leagueId)
+  const team = teams.find((item) => String(item.id) === extra.teamId)
+  let leagueId = extra.leagueId
+  let teamId = extra.teamId
+  if (league && extra.sport && league.sport !== extra.sport) leagueId = ''
+  if (team && extra.sport && team.sport !== extra.sport) teamId = ''
+  if (team && leagueId && team.leagueId && String(team.leagueId) !== leagueId) teamId = ''
+  return { ...extra, leagueId, teamId }
+}
 
 export default function AdminMatchesPage() {
   const qs = useQueryState()
-  const from = isDay(qs.get('from')) ? qs.get('from') : ''
-  const to = isDay(qs.get('to')) ? qs.get('to') : ''
-  const leagueId = toPositiveInt(qs.get('leagueId'))
-  const statusParam = qs.get('status')
-  const status: StatusTab = isMatchStatus(statusParam) ? statusParam : 'all'
-  const q = qs.get('q')
-  const [search, setSearch] = useState(q)
+  const { applied: appliedDates, draft, setDraft, restoreNotice } = useRestoredDateFilter(qs)
+  const appliedExtra = extraFromParams(qs.get)
+  const [extra, setExtra] = useState(appliedExtra)
   const [editing, setEditing] = useState<Match | 'new' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
   const leagues = useApi<League[]>('/leagues')
+  const teams = useApi<Team[]>('/teams')
+  const leagueItems = leagues.data ?? []
+  const teamItems = teams.data ?? []
+
+  useEffect(() => {
+    setExtra(appliedExtra)
+  }, [qs.params.toString()])
+
   const list = useApi<Paged<Match>>(
     `/admin/matches${buildQuery({
-      from: from || null,
-      to: to || null,
-      leagueId,
-      status: status === 'all' ? null : status,
-      q: q || null,
+      ...dateFilterQuery(appliedDates),
+      ...extraQuery(appliedExtra),
       page: qs.page,
       pageSize: qs.pageSize,
     })}`,
   )
 
-  const onSearch = (e: FormEvent) => {
-    e.preventDefault()
-    qs.update({ q: search.trim() || null })
+  const apply = (dates = draft, nextExtra = extra) => {
+    qs.update({ ...serializeDateFilter(dates), ...extraQuery(linkedExtra(nextExtra, leagueItems, teamItems)) })
   }
+  const reset = () => {
+    const dates = emptyDateFilter()
+    setDraft(dates)
+    setExtra(EMPTY_EXTRA)
+    qs.update({ ...serializeDateFilter(dates), ...extraQuery(EMPTY_EXTRA) }, { replace: true })
+  }
+  const setSport = (sport: string) => setExtra(linkedExtra({ ...extra, sport }, leagueItems, teamItems))
+  const setLeague = (leagueId: string) => setExtra(linkedExtra({ ...extra, leagueId }, leagueItems, teamItems))
+
+  const chips: FilterChip[] = [dateRangeChip(appliedDates, () => apply(withToday(appliedDates), appliedExtra))]
+  if (appliedExtra.status) {
+    chips.push({
+      key: 'status',
+      label: `상태: ${MATCH_STATUS_LABELS[appliedExtra.status]}`,
+      onRemove: () => apply(appliedDates, { ...appliedExtra, status: '' }),
+    })
+  }
+  if (appliedExtra.sport) {
+    chips.push({
+      key: 'sport',
+      label: `종목: ${appliedExtra.sport}`,
+      onRemove: () => apply(appliedDates, linkedExtra({ ...appliedExtra, sport: '' }, leagueItems, teamItems)),
+    })
+  }
+  if (appliedExtra.leagueId) {
+    const name = leagueItems.find((item) => String(item.id) === appliedExtra.leagueId)?.name ?? appliedExtra.leagueId
+    chips.push({
+      key: 'leagueId',
+      label: `리그: ${name}`,
+      onRemove: () => apply(appliedDates, { ...appliedExtra, leagueId: '', teamId: appliedExtra.teamId }),
+    })
+  }
+  if (appliedExtra.teamId) {
+    const name = teamItems.find((item) => String(item.id) === appliedExtra.teamId)?.name ?? appliedExtra.teamId
+    chips.push({
+      key: 'teamId',
+      label: `팀: ${name}`,
+      onRemove: () => apply(appliedDates, { ...appliedExtra, teamId: '' }),
+    })
+  }
+  if (appliedExtra.hasScore) {
+    chips.push({ key: 'hasScore', label: '점수 있음', onRemove: () => apply(appliedDates, { ...appliedExtra, hasScore: '' }) })
+  }
+  if (appliedExtra.missingScore) {
+    chips.push({ key: 'missingScore', label: '점수 없음', onRemove: () => apply(appliedDates, { ...appliedExtra, missingScore: '' }) })
+  }
+  if (appliedExtra.side) {
+    chips.push({
+      key: 'side',
+      label: appliedExtra.side === 'home' ? '홈 경기' : '원정 경기',
+      onRemove: () => apply(appliedDates, { ...appliedExtra, side: '' }),
+    })
+  }
+
+  const sports = uniqueSorted(leagueItems.map((item) => item.sport))
+  const visibleLeagues = extra.sport ? leagueItems.filter((item) => item.sport === extra.sport) : leagueItems
+  const visibleTeams = teamItems.filter((item) => {
+    if (extra.sport && item.sport !== extra.sport) return false
+    if (extra.leagueId && item.leagueId && String(item.leagueId) !== extra.leagueId) return false
+    return true
+  })
+  const total = list.data?.total ?? 0
 
   const onDelete = async (match: Match) => {
     if (!window.confirm(`${match.homeTeam} vs ${match.awayTeam} 경기를 삭제할까요?\n연결된 글은 경기 연결만 풀립니다.`)) return
@@ -72,36 +190,83 @@ export default function AdminMatchesPage() {
         }
       />
 
-      <div className="mb-3">
-        <SegmentedTabs items={STATUS_TABS} value={status} onChange={(v) => qs.update({ status: v === 'all' ? null : v })} />
-      </div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <input type="date" aria-label="시작일" value={from} onChange={(e) => qs.update({ from: e.target.value || null })} className={`${inputCls} w-40!`} />
-        <span className="text-muted">~</span>
-        <input type="date" aria-label="종료일" value={to} onChange={(e) => qs.update({ to: e.target.value || null })} className={`${inputCls} w-40!`} />
-        <select
-          aria-label="리그"
-          value={leagueId ?? ''}
-          onChange={(e) => qs.update({ leagueId: e.target.value || null })}
-          className={selectCls}
-        >
-          <option value="">전체 리그</option>
-          {leagues.data?.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-        <form onSubmit={onSearch} className="flex gap-2">
-          <div className="relative">
-            <IconSearch className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="팀 이름" aria-label="팀 이름 검색" className={`${inputCls} w-44! pl-9`} />
+      <ListFilterBar
+        dateLabel="경기 시작일 기준"
+        searchPlaceholder="팀 이름, 경기장 검색"
+        draft={draft}
+        applied={appliedDates}
+        onDraft={setDraft}
+        onSubmit={() => apply()}
+        onReset={reset}
+        restoreNotice={restoreNotice}
+        advancedCount={advancedCountOf(appliedExtra)}
+        chips={chips}
+        basic={
+          <>
+            <OptionButtons
+              label="상태"
+              value={extra.status}
+              onChange={(value) => setExtra({ ...extra, status: value })}
+              items={[{ value: '', label: '전체 상태' }, ...(Object.keys(MATCH_STATUS_LABELS) as MatchStatus[]).map((s) => ({ value: s, label: MATCH_STATUS_LABELS[s] }))]}
+            />
+            <FilterChoice
+              label="종목"
+              value={extra.sport}
+              onChange={setSport}
+              items={[{ value: '', label: '전체 종목' }, ...sports.map((sport) => ({ value: sport, label: sport }))]}
+            />
+            <FilterChoice
+              label="리그"
+              value={extra.leagueId}
+              onChange={setLeague}
+              items={[{ value: '', label: '전체 리그' }, ...visibleLeagues.map((l) => ({ value: String(l.id), label: l.name }))]}
+            />
+          </>
+        }
+        advanced={
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="팀">
+              <FilterChoice
+                label="팀"
+                value={extra.teamId}
+                onChange={(value) => setExtra({ ...extra, teamId: value })}
+                items={[{ value: '', label: '전체 팀' }, ...visibleTeams.map((team) => ({ value: String(team.id), label: team.name }))]}
+              />
+            </Field>
+            <Field label="홈/원정">
+              <FilterChoice
+                label="홈/원정"
+                value={extra.side}
+                onChange={(value) => setExtra({ ...extra, side: value })}
+                items={[
+                  { value: '', label: '제한 없음' },
+                  { value: 'home', label: '홈' },
+                  { value: 'away', label: '원정' },
+                ]}
+              />
+            </Field>
+            <Field label="점수">
+              <FilterChoice
+                label="점수"
+                value={extra.hasScore ? 'true' : extra.missingScore ? 'missing' : ''}
+                onChange={(value) =>
+                  setExtra({
+                    ...extra,
+                    hasScore: value === 'true' ? 'true' : '',
+                    missingScore: value === 'missing' ? 'true' : '',
+                  })
+                }
+                items={[
+                  { value: '', label: '제한 없음' },
+                  { value: 'true', label: '점수 있음' },
+                  { value: 'missing', label: '점수 없음' },
+                ]}
+              />
+            </Field>
           </div>
-          <button type="submit" className={btnSecondary}>
-            검색
-          </button>
-        </form>
-      </div>
+        }
+        summary={<p className="text-xs text-dim">{resultCountText(total, qs.page, qs.pageSize, '건')}</p>}
+      />
 
       {actionError && (
         <div className="mb-3">
@@ -116,13 +281,9 @@ export default function AdminMatchesPage() {
       ) : !list.data || list.data.items.length === 0 ? (
         <EmptyState
           icon={<IconBall size={20} />}
-          title="조건에 맞는 경기가 없습니다"
-          description="필터를 바꾸거나 새 경기를 등록하세요."
-          action={
-            <button type="button" onClick={() => setEditing('new')} className={btnPrimary}>
-              경기 등록
-            </button>
-          }
+          title="선택한 경기일 기간과 검색어에 맞는 경기가 없습니다."
+          description="기간을 넓히거나 조건을 초기화해 보세요."
+          action={<EmptyFilterActions onAllPeriod={() => apply(withAllPeriod(appliedDates), appliedExtra)} onReset={reset} />}
         />
       ) : (
         <>

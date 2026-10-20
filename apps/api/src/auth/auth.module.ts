@@ -9,5 +9,6 @@ import { AuthService } from './auth.service.js';
   imports: [SettingsModule],
   controllers: [AuthController],
   providers: [AuthService, { provide: APP_GUARD, useClass: AuthGuard }],
+  exports: [AuthService],
 })
 export class AuthModule {}

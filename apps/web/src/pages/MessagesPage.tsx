@@ -1,20 +1,52 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { EmptyFilterActions, ListFilterBar, OptionButtons, dateRangeChip, useRestoredDateFilter, type FilterChip } from '../components/filters'
 import { IconMail } from '../components/icons'
 import { EmptyState, ErrorBox, FormError, Loading, PageHeader, Pagination, Pill } from '../components/ui'
 import { apiFetch, buildQuery, errorMessage, useApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatDateTime, formatShort } from '../lib/format'
+import { dateFilterQuery, emptyDateFilter, resultCountText, serializeDateFilter, withAllPeriod, withToday } from '../lib/list-query'
+import { useQueryState } from '../lib/params'
 import { btnSmDanger, cardCls } from '../lib/styles'
 import type { Message, MessageList } from '../lib/types'
 
+type Extra = { unread: '' | 'true' }
+const EMPTY_EXTRA: Extra = { unread: '' }
+
 export default function MessagesPage() {
   const { refreshUnread } = useAuth()
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const qs = useQueryState()
+  const { applied: appliedDates, draft, setDraft, restoreNotice } = useRestoredDateFilter(qs)
+  const appliedExtra: Extra = { unread: qs.get('unread') === 'true' ? 'true' : '' }
+  const [extra, setExtra] = useState(appliedExtra)
   const [openId, setOpenId] = useState<number | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const { data, loading, error, reload } = useApi<MessageList>(`/messages${buildQuery({ page, pageSize })}`)
+
+  useEffect(() => {
+    setExtra(appliedExtra)
+  }, [qs.params.toString()])
+
+  const { data, loading, error, reload } = useApi<MessageList>(
+    `/messages${buildQuery({
+      ...dateFilterQuery(appliedDates),
+      unread: appliedExtra.unread || null,
+      page: qs.page,
+      pageSize: qs.pageSize,
+    })}`,
+  )
+
+  const apply = (dates = draft, nextExtra = extra) => qs.update({ ...serializeDateFilter(dates), unread: nextExtra.unread || null })
+  const reset = () => {
+    const dates = emptyDateFilter()
+    setDraft(dates)
+    setExtra(EMPTY_EXTRA)
+    qs.update({ ...serializeDateFilter(dates), unread: null }, { replace: true })
+  }
+  const chips: FilterChip[] = [dateRangeChip(appliedDates, () => apply(withToday(appliedDates), appliedExtra))]
+  if (appliedExtra.unread) {
+    chips.push({ key: 'unread', label: '안 읽음', onRemove: () => apply(appliedDates, { unread: '' }) })
+  }
 
   const onToggle = async (message: Message) => {
     if (openId === message.id) return setOpenId(null)
@@ -53,6 +85,29 @@ export default function MessagesPage() {
         title="쪽지함"
         subtitle={data ? `읽지 않은 쪽지 ${data.unreadCount}개` : '운영진이 보낸 쪽지를 확인합니다.'}
       />
+      <ListFilterBar
+        dateLabel="받은 시각 기준"
+        searchPlaceholder="제목, 내용 검색"
+        draft={draft}
+        applied={appliedDates}
+        onDraft={setDraft}
+        onSubmit={() => apply()}
+        onReset={reset}
+        restoreNotice={restoreNotice}
+        chips={chips}
+        basic={
+          <OptionButtons
+            label="읽음"
+            value={extra.unread}
+            onChange={(value) => setExtra({ unread: value })}
+            items={[
+              { value: '', label: '전체' },
+              { value: 'true', label: '안 읽음' },
+            ]}
+          />
+        }
+        summary={<p className="text-xs text-dim">{resultCountText(data?.total ?? 0, qs.page, qs.pageSize, '건')}</p>}
+      />
       {actionError && (
         <div className="mb-3">
           <FormError message={actionError} />
@@ -63,7 +118,12 @@ export default function MessagesPage() {
       ) : error ? (
         <ErrorBox message={error} onRetry={reload} />
       ) : !data || data.items.length === 0 ? (
-        <EmptyState icon={<IconMail size={20} />} title="받은 쪽지가 없습니다" description="운영진이 보낸 쪽지가 여기에 표시됩니다." />
+        <EmptyState
+          icon={<IconMail size={20} />}
+          title="선택한 받은 시각 기간과 검색어에 맞는 쪽지가 없습니다."
+          description="기간을 넓히거나 조건을 초기화해 보세요."
+          action={<EmptyFilterActions onAllPeriod={() => apply(withAllPeriod(appliedDates), appliedExtra)} onReset={reset} />}
+        />
       ) : (
         <>
           <ul className={`${cardCls} overflow-hidden`}>
@@ -95,14 +155,11 @@ export default function MessagesPage() {
             ))}
           </ul>
           <Pagination
-            page={page}
-            pageSize={pageSize}
+            page={qs.page}
+            pageSize={qs.pageSize}
             total={data.total}
-            onPage={setPage}
-            onPageSize={(size) => {
-              setPageSize(size)
-              setPage(1)
-            }}
+            onPage={(p) => qs.update({ page: p }, true)}
+            onPageSize={(size) => qs.update({ pageSize: size })}
           />
         </>
       )}

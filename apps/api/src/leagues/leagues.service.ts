@@ -3,11 +3,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, eq, ne } from 'drizzle-orm';
+import { and, asc, count, eq, exists, ilike, ne, sql, type SQL } from 'drizzle-orm';
+import { dateCondition, rangeMeta, resolveDateRange } from '../common/date-range.js';
+import { pageParams } from '../common/pagination.js';
+import { andTokens, anyField, searchTokens, tokenPattern } from '../common/search-query.js';
 import { leagueColumns } from '../db/columns.js';
 import { DbService } from '../db/db.service.js';
 import { leagues, matches } from '../db/schema.js';
-import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto.js';
+import { AdminListLeaguesDto, CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto.js';
 
 @Injectable()
 export class LeaguesService {
@@ -18,6 +21,47 @@ export class LeaguesService {
       .select(leagueColumns)
       .from(leagues)
       .orderBy(asc(leagues.name));
+  }
+
+  async listAdmin(query: AdminListLeaguesDto) {
+    const { page, pageSize, offset } = pageParams(query);
+    const range = resolveDateRange(query);
+    const conditions: SQL[] = [];
+    const bounded = dateCondition(leagues.createdAt, range);
+    if (bounded) conditions.push(bounded);
+    if (query.sport) conditions.push(eq(leagues.sport, query.sport));
+    conditions.push(
+      ...andTokens(searchTokens(query.q), (token) => {
+        const pattern = tokenPattern(token);
+        return anyField([ilike(leagues.name, pattern), ilike(leagues.sport, pattern)]);
+      }),
+    );
+    const matchExists = exists(
+      this.dbService.db
+        .select({ id: matches.id })
+        .from(matches)
+        .where(eq(matches.leagueId, leagues.id)),
+    );
+    if (query.hasMatches === true) conditions.push(matchExists);
+    if (query.hasMatches === false) conditions.push(sql`not ${matchExists}`);
+    if (query.minMatchCount !== undefined) {
+      conditions.push(
+        sql`(select count(*)::int from "matches" where "matches"."league_id" = "leagues"."id") >= ${query.minMatchCount}`,
+      );
+    }
+    const where = and(...conditions);
+    const db = this.dbService.db;
+    const [items, [{ total }]] = await Promise.all([
+      db
+        .select(leagueColumns)
+        .from(leagues)
+        .where(where)
+        .orderBy(asc(leagues.name), asc(leagues.id))
+        .limit(pageSize)
+        .offset(offset),
+      db.select({ total: count() }).from(leagues).where(where),
+    ]);
+    return { items, total, page, pageSize, filter: rangeMeta(range) };
   }
 
   async get(id: number) {

@@ -28,6 +28,31 @@ type RequestOptions = {
   body?: unknown
 }
 
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData()
+  form.append('file', file)
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    })
+  } catch {
+    throw new ApiError(0, '서버에 연결할 수 없습니다.')
+  }
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => null)
+    const message = isErrorBody(data)
+      ? Array.isArray(data.message)
+        ? data.message.join('\n')
+        : data.message
+      : `요청에 실패했습니다. (${res.status})`
+    throw new ApiError(res.status, message)
+  }
+  return (await res.json()) as T
+}
+
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body } = options
   let res: Response
@@ -48,7 +73,9 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       ? Array.isArray(data.message)
         ? data.message.join('\n')
         : data.message
-      : `요청에 실패했습니다. (${res.status})`
+      : res.status === 429
+        ? '요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.'
+        : `요청에 실패했습니다. (${res.status})`
     throw new ApiError(res.status, message)
   }
 

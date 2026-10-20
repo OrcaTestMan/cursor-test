@@ -1,17 +1,95 @@
-import { useState, type FormEvent } from 'react'
-import { IconClose, IconSearch, IconSend } from '../../components/icons'
+import { useEffect, useState, type FormEvent } from 'react'
+import { UserPicker } from '../../components/admin/UserPicker'
+import { EmptyFilterActions, ListFilterBar, OptionButtons, dateRangeChip, useRestoredDateFilter, type FilterChip } from '../../components/filters'
+import { IconClose, IconSend } from '../../components/icons'
 import { Card, EmptyState, ErrorBox, Field, FormError, FormSuccess, Loading, PageHeader, Pagination, Pill } from '../../components/ui'
 import { apiFetch, buildQuery, errorMessage, useApi } from '../../lib/api'
 import { formatShort, toPositiveInt } from '../../lib/format'
+import { dateFilterQuery, emptyDateFilter, resultCountText, serializeDateFilter, withAllPeriod, withToday } from '../../lib/list-query'
 import { useQueryState } from '../../lib/params'
-import { btnPrimary, btnSecondary, cardCls, inputCls, tdCls, textareaCls, thCls, trCls } from '../../lib/styles'
+import { btnPrimary, cardCls, inputCls, tdCls, textareaCls, thCls, trCls } from '../../lib/styles'
 import type { AdminUser, Author, Paged, SentMessage } from '../../lib/types'
+
+type Extra = {
+  toAll: '' | 'true' | 'false'
+  toUserId: string
+  unreadOnly: '' | 'true'
+}
+
+const EMPTY_EXTRA: Extra = { toAll: '', toUserId: '', unreadOnly: '' }
+
+function extraFromParams(get: (key: string) => string): Extra {
+  const toAll = get('toAll')
+  return {
+    toAll: toAll === 'true' || toAll === 'false' ? toAll : '',
+    toUserId: get('toUserId'),
+    unreadOnly: get('unreadOnly') === 'true' ? 'true' : '',
+  }
+}
+
+function extraQuery(extra: Extra): Record<string, string | null> {
+  return {
+    toAll: extra.toAll || null,
+    toUserId: extra.toUserId || null,
+    unreadOnly: extra.unreadOnly || null,
+  }
+}
 
 export default function AdminMessagesPage() {
   const qs = useQueryState()
   const toId = toPositiveInt(qs.get('to'))
   const preset = useApi<AdminUser>(toId ? `/admin/users/${toId}` : null)
-  const history = useApi<Paged<SentMessage>>(`/admin/messages${buildQuery({ page: qs.page, pageSize: qs.pageSize })}`)
+  const { applied: appliedDates, draft, setDraft, restoreNotice } = useRestoredDateFilter(qs)
+  const appliedExtra = extraFromParams(qs.get)
+  const [extra, setExtra] = useState(appliedExtra)
+
+  useEffect(() => {
+    setExtra(appliedExtra)
+  }, [qs.params.toString()])
+
+  const history = useApi<Paged<SentMessage>>(
+    `/admin/messages${buildQuery({
+      ...dateFilterQuery(appliedDates),
+      ...extraQuery(appliedExtra),
+      page: qs.page,
+      pageSize: qs.pageSize,
+    })}`,
+  )
+
+  const apply = (dates = draft, nextExtra = extra) => {
+    qs.update({ ...serializeDateFilter(dates), ...extraQuery(nextExtra) })
+  }
+  const reset = () => {
+    const dates = emptyDateFilter()
+    setDraft(dates)
+    setExtra(EMPTY_EXTRA)
+    qs.update({ ...serializeDateFilter(dates), ...extraQuery(EMPTY_EXTRA) }, { replace: true })
+  }
+
+  const chips: FilterChip[] = [dateRangeChip(appliedDates, () => apply(withToday(appliedDates), appliedExtra))]
+  if (appliedExtra.toAll) {
+    chips.push({
+      key: 'toAll',
+      label: appliedExtra.toAll === 'true' ? '전체 발송' : '개별 발송',
+      onRemove: () => apply(appliedDates, { ...appliedExtra, toAll: '' }),
+    })
+  }
+  if (appliedExtra.toUserId) {
+    chips.push({
+      key: 'toUserId',
+      label: `받는 회원: #${appliedExtra.toUserId}`,
+      onRemove: () => apply(appliedDates, { ...appliedExtra, toUserId: '' }),
+    })
+  }
+  if (appliedExtra.unreadOnly) {
+    chips.push({
+      key: 'unreadOnly',
+      label: '미읽음만',
+      onRemove: () => apply(appliedDates, { ...appliedExtra, unreadOnly: '' }),
+    })
+  }
+
+  const total = history.data?.total ?? 0
 
   return (
     <div className="space-y-5">
@@ -29,12 +107,58 @@ export default function AdminMessagesPage() {
 
       <Card title="보낸 쪽지">
         <div className="p-4">
+          <ListFilterBar
+            dateLabel="발송일 기준"
+            searchPlaceholder="제목, 내용, 받는 사람 검색"
+            draft={draft}
+            applied={appliedDates}
+            onDraft={setDraft}
+            onSubmit={() => apply()}
+            onReset={reset}
+            restoreNotice={restoreNotice}
+            advancedCount={[appliedExtra.toUserId, appliedExtra.unreadOnly].filter(Boolean).length}
+            chips={chips}
+            basic={
+              <OptionButtons
+                label="발송 대상"
+                value={extra.toAll}
+                onChange={(value) => setExtra({ ...extra, toAll: value })}
+                items={[
+                  { value: '', label: '전체' },
+                  { value: 'true', label: '전체 발송' },
+                  { value: 'false', label: '개별 발송' },
+                ]}
+              />
+            }
+            advanced={
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="받는 회원번호">
+                  <input value={extra.toUserId} onChange={(e) => setExtra({ ...extra, toUserId: e.target.value })} inputMode="numeric" className={inputCls} placeholder="예: 12" />
+                </Field>
+                <OptionButtons
+                  label="읽음"
+                  value={extra.unreadOnly}
+                  onChange={(value) => setExtra({ ...extra, unreadOnly: value })}
+                  items={[
+                    { value: '', label: '전체' },
+                    { value: 'true', label: '미읽음만' },
+                  ]}
+                />
+              </div>
+            }
+            summary={<p className="text-xs text-dim">{resultCountText(total, qs.page, qs.pageSize, '건')}</p>}
+          />
           {history.loading ? (
             <Loading />
           ) : history.error ? (
             <ErrorBox message={history.error} onRetry={history.reload} />
           ) : !history.data || history.data.items.length === 0 ? (
-            <EmptyState icon={<IconSend size={20} />} title="보낸 쪽지가 없습니다" />
+            <EmptyState
+              icon={<IconSend size={20} />}
+              title="선택한 발송일 기간과 검색어에 맞는 쪽지가 없습니다."
+              description="기간을 넓히거나 조건을 초기화해 보세요."
+              action={<EmptyFilterActions onAllPeriod={() => apply(withAllPeriod(appliedDates), appliedExtra)} onReset={reset} />}
+            />
           ) : (
             <>
               <div className="overflow-x-auto rounded-xl border border-edge">
@@ -177,58 +301,3 @@ function SendForm({
   )
 }
 
-function UserPicker({ onPick }: { onPick: (user: Author) => void }) {
-  const [input, setInput] = useState('')
-  const [q, setQ] = useState<string | null>(null)
-  const result = useApi<Paged<AdminUser>>(q === null ? null : `/admin/users${buildQuery({ q, status: 'active', page: 1, pageSize: 20 })}`)
-
-  return (
-    <div className="rounded-lg border border-edge bg-panel p-3">
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <IconSearch className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                setQ(input.trim())
-              }
-            }}
-            placeholder="아이디 또는 닉네임으로 회원 검색"
-            aria-label="회원 검색"
-            className={`${inputCls} pl-9`}
-          />
-        </div>
-        <button type="button" onClick={() => setQ(input.trim())} className={btnSecondary}>
-          찾기
-        </button>
-      </div>
-      {q !== null && (
-        <div className="mt-2 max-h-56 overflow-y-auto">
-          {result.loading ? (
-            <Loading />
-          ) : result.error ? (
-            <p className="px-2 py-3 text-xs text-danger">{result.error}</p>
-          ) : !result.data || result.data.items.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-dim">검색된 회원이 없습니다.</p>
-          ) : (
-            result.data.items.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => onPick({ id: u.id, nickname: u.nickname })}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-card-hover"
-              >
-                <span className="text-muted">#{u.id}</span>
-                <span className="font-semibold">{u.nickname}</span>
-                <span className="text-dim">({u.username})</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  )
-}

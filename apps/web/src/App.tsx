@@ -1,67 +1,54 @@
-import { Route, Routes } from 'react-router'
-import AdminLayout from './components/AdminLayout'
-import { RequireAdmin, RequireAuth } from './components/guards'
-import UserLayout from './components/UserLayout'
-import AdminBlacklistPage from './pages/admin/AdminBlacklistPage'
-import AdminDashboardPage from './pages/admin/AdminDashboardPage'
-import AdminInquiriesPage from './pages/admin/AdminInquiriesPage'
-import AdminLeaguesPage from './pages/admin/AdminLeaguesPage'
-import AdminMatchesPage from './pages/admin/AdminMatchesPage'
-import AdminMessagesPage from './pages/admin/AdminMessagesPage'
-import AdminPostsPage from './pages/admin/AdminPostsPage'
-import AdminSettingsPage from './pages/admin/AdminSettingsPage'
-import AdminUsersPage from './pages/admin/AdminUsersPage'
-import BoardPage from './pages/BoardPage'
-import HomePage from './pages/HomePage'
-import InquiriesPage from './pages/InquiriesPage'
-import InquiryDetailPage from './pages/InquiryDetailPage'
-import LivePage from './pages/LivePage'
-import LoginPage from './pages/LoginPage'
-import MatchDetailPage from './pages/MatchDetailPage'
-import MatchesPage from './pages/MatchesPage'
-import MePage from './pages/MePage'
-import MessagesPage from './pages/MessagesPage'
-import NotFoundPage from './pages/NotFoundPage'
-import PostDetailPage from './pages/PostDetailPage'
-import SignupPage from './pages/SignupPage'
-import WritePage from './pages/WritePage'
+import { useEffect } from 'react'
+import { useLocation } from 'react-router'
+
+const pages: Record<string, string> = {
+  '/': '/nex/dashboard.html',
+  '/admin': '/nex/dashboard.html',
+  '/admin/finance': '/nex/finance.html',
+  '/admin/risk': '/nex/risk.html',
+  '/admin/review': '/nex/review.html',
+  '/admin/matches': '/nex/matches.html',
+  '/admin/bets': '/nex/bets.html',
+  '/admin/cash': '/nex/cash.html',
+  '/admin/inquiries': '/nex/inquiries.html',
+  '/admin/board-moderation': '/nex/board.html',
+  '/admin/users': '/nex/users.html',
+  '/admin/blacklist': '/nex/blacklist.html',
+  '/admin/dist': '/nex/dist.html',
+  '/admin/transactions': '/nex/transactions.html',
+  '/admin/points': '/nex/points.html',
+  '/admin/casino': '/nex/casino.html',
+  '/admin/casino-points': '/nex/casino-points.html',
+  '/admin/logs': '/nex/logs.html',
+  '/admin/settle-audit': '/nex/settle-audit.html',
+  '/admin/wallet': '/nex/wallet.html',
+  '/admin/banners': '/nex/banners.html',
+  '/admin/settings': '/nex/settings.html',
+  '/support': '/nex/support.html',
+  '/live': '/nex/live.html',
+  '/my-bets': '/nex/my-bets.html',
+  '/account': '/nex/account.html',
+  '/cash': '/nex/user-cash.html',
+  '/messages': '/nex/messages.html',
+  '/all': '/nex/all.html',
+}
 
 export default function App() {
-  return (
-    <Routes>
-      <Route path="admin" element={<RequireAdmin />}>
-        <Route element={<AdminLayout />}>
-          <Route index element={<AdminDashboardPage />} />
-          <Route path="matches" element={<AdminMatchesPage />} />
-          <Route path="leagues" element={<AdminLeaguesPage />} />
-          <Route path="posts" element={<AdminPostsPage />} />
-          <Route path="inquiries" element={<AdminInquiriesPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="blacklist" element={<AdminBlacklistPage />} />
-          <Route path="messages" element={<AdminMessagesPage />} />
-          <Route path="settings" element={<AdminSettingsPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Route>
-      </Route>
-      <Route element={<UserLayout />}>
-        <Route index element={<HomePage />} />
-        <Route path="live" element={<LivePage />} />
-        <Route path="matches" element={<MatchesPage />} />
-        <Route path="matches/:id" element={<MatchDetailPage />} />
-        <Route path="board/:category" element={<BoardPage />} />
-        <Route path="posts/:id" element={<PostDetailPage />} />
-        <Route path="login" element={<LoginPage />} />
-        <Route path="signup" element={<SignupPage />} />
-        <Route element={<RequireAuth />}>
-          <Route path="write" element={<WritePage />} />
-          <Route path="posts/:id/edit" element={<WritePage />} />
-          <Route path="me" element={<MePage />} />
-          <Route path="messages" element={<MessagesPage />} />
-          <Route path="inquiries" element={<InquiriesPage />} />
-          <Route path="inquiries/:id" element={<InquiryDetailPage />} />
-        </Route>
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
-    </Routes>
-  )
+  const location = useLocation()
+  useEffect(() => {
+    const path = location.pathname.length > 1 ? location.pathname.replace(/\/$/, '') : location.pathname
+    const query = path === '/casino' ? location.search : ''
+    const casino =
+      query === '?cat=live'
+        ? '/nex/casino-live.html'
+        : query === '?cat=mini'
+          ? '/nex/casino-mini.html'
+          : query === '?cat=slots'
+            ? '/nex/casino-slots.html'
+            : ''
+    const board = path.startsWith('/board/') ? `/nex/board-${path.slice('/board/'.length)}.html` : ''
+    const target = casino || board || pages[path] || '/nex/dashboard.html'
+    window.location.replace(target)
+  }, [location])
+  return null
 }

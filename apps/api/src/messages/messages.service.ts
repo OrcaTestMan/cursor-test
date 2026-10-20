@@ -3,14 +3,26 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, count, desc, eq, isNull, ne } from 'drizzle-orm';
+import { and, count, desc, eq, exists, ilike, isNotNull, isNull, ne, type SQL } from 'drizzle-orm';
 import type { AuthUser } from '../auth/auth.types.js';
-import { pageParams, type PaginationQueryDto } from '../common/pagination.js';
+import { dateCondition, rangeMeta, resolveDateRange } from '../common/date-range.js';
+import { pageParams } from '../common/pagination.js';
+import { andTokens, anyField, searchTokens, tokenPattern } from '../common/search-query.js';
 import { DbService } from '../db/db.service.js';
 import { messages, messageSends, users } from '../db/schema.js';
-import { SendMessageDto } from './dto/message.dto.js';
+import { AuditService } from '../moderation/audit.service.js';
+import {
+  NotificationsService,
+  quoteTitle,
+} from '../notifications/notifications.service.js';
+import {
+  AdminListMessagesDto,
+  ListMineMessagesDto,
+  SendMessageDto,
+} from './dto/message.dto.js';
 
 const NOT_FOUND = '쪽지를 찾을 수 없습니다.';
+const INSERT_CHUNK = 1000;
 
 const messageColumns = {
   id: messages.id,
@@ -22,15 +34,34 @@ const messageColumns = {
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly dbService: DbService) {}
+  constructor(
+    private readonly dbService: DbService,
+    private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   private inbox(user: AuthUser) {
     return and(eq(messages.userId, user.id), isNull(messages.deletedAt));
   }
 
-  async listMine(user: AuthUser, query: PaginationQueryDto) {
+  async listMine(user: AuthUser, query: ListMineMessagesDto) {
     const { page, pageSize, offset } = pageParams(query);
-    const where = this.inbox(user);
+    const range = resolveDateRange(query);
+    const conditions: SQL[] = [this.inbox(user)!];
+    const bounded = dateCondition(messages.createdAt, range);
+    if (bounded) conditions.push(bounded);
+    if (query.unread === true) conditions.push(isNull(messages.readAt));
+    if (query.unread === false) conditions.push(isNotNull(messages.readAt));
+    conditions.push(
+      ...andTokens(searchTokens(query.q), (token) => {
+        const pattern = tokenPattern(token);
+        return anyField([
+          ilike(messageSends.title, pattern),
+          ilike(messageSends.body, pattern),
+        ]);
+      }),
+    );
+    const where = and(...conditions);
     const db = this.dbService.db;
     const [items, [{ total }], [{ unreadCount }]] = await Promise.all([
       db
@@ -41,13 +72,17 @@ export class MessagesService {
         .orderBy(desc(messages.createdAt), desc(messages.id))
         .limit(pageSize)
         .offset(offset),
-      db.select({ total: count() }).from(messages).where(where),
+      db
+        .select({ total: count() })
+        .from(messages)
+        .innerJoin(messageSends, eq(messages.sendId, messageSends.id))
+        .where(where),
       db
         .select({ unreadCount: count() })
         .from(messages)
-        .where(and(where, isNull(messages.readAt))),
+        .where(and(this.inbox(user), isNull(messages.readAt))),
     ]);
-    return { items, total, page, pageSize, unreadCount };
+    return { items, total, page, pageSize, unreadCount, filter: rangeMeta(range) };
   }
 
   private async getMine(user: AuthUser, id: number) {
@@ -112,7 +147,7 @@ export class MessagesService {
       recipientIds = [user.id];
     }
 
-    return db.transaction(async (tx) => {
+    const sendId = await db.transaction(async (tx) => {
       const [send] = await tx
         .insert(messageSends)
         .values({
@@ -122,17 +157,70 @@ export class MessagesService {
           toUserId: toAll ? null : recipientIds[0],
         })
         .returning({ id: messageSends.id });
-      if (recipientIds.length > 0) {
-        await tx
-          .insert(messages)
-          .values(recipientIds.map((userId) => ({ sendId: send.id, userId })));
+      for (let i = 0; i < recipientIds.length; i += INSERT_CHUNK) {
+        await tx.insert(messages).values(
+          recipientIds
+            .slice(i, i + INSERT_CHUNK)
+            .map((userId) => ({ sendId: send.id, userId })),
+        );
       }
-      return { sent: recipientIds.length };
+      return send.id;
     });
+
+    await this.auditService.log(
+      sender,
+      'message.send',
+      'message',
+      sendId,
+      `${toAll ? '전체' : `회원 ${recipientIds[0]}`} · ${recipientIds.length}명 · ${dto.title}`,
+    );
+    await this.notificationsService.notifyMany(
+      recipientIds,
+      'message',
+      quoteTitle(dto.title, ' 쪽지가 도착했습니다.'),
+      '/messages',
+      sender.id,
+    );
+    return { sent: recipientIds.length };
   }
 
-  async listSent(query: PaginationQueryDto) {
+  async listSent(query: AdminListMessagesDto) {
     const { page, pageSize, offset } = pageParams(query);
+    const range = resolveDateRange(query);
+    const conditions: SQL[] = [];
+    const bounded = dateCondition(messageSends.createdAt, range);
+    if (bounded) conditions.push(bounded);
+    if (query.toAll === true) conditions.push(eq(messageSends.toAll, true));
+    if (query.toAll === false) conditions.push(eq(messageSends.toAll, false));
+    if (query.toUserId) conditions.push(eq(messageSends.toUserId, query.toUserId));
+    conditions.push(
+      ...andTokens(searchTokens(query.q), (token) => {
+        const pattern = tokenPattern(token);
+        return anyField([
+          ilike(messageSends.title, pattern),
+          ilike(messageSends.body, pattern),
+          ilike(users.nickname, pattern),
+          ilike(users.username, pattern),
+        ]);
+      }),
+    );
+    if (query.unreadOnly === true) {
+      conditions.push(
+        exists(
+          this.dbService.db
+            .select({ id: messages.id })
+            .from(messages)
+            .where(
+              and(
+                eq(messages.sendId, messageSends.id),
+                isNull(messages.readAt),
+                isNull(messages.deletedAt),
+              ),
+            ),
+        ),
+      );
+    }
+    const where = and(...conditions);
     const db = this.dbService.db;
     const [items, [{ total }]] = await Promise.all([
       db
@@ -146,11 +234,16 @@ export class MessagesService {
         })
         .from(messageSends)
         .leftJoin(users, eq(messageSends.toUserId, users.id))
+        .where(where)
         .orderBy(desc(messageSends.createdAt), desc(messageSends.id))
         .limit(pageSize)
         .offset(offset),
-      db.select({ total: count() }).from(messageSends),
+      db
+        .select({ total: count() })
+        .from(messageSends)
+        .leftJoin(users, eq(messageSends.toUserId, users.id))
+        .where(where),
     ]);
-    return { items, total, page, pageSize };
+    return { items, total, page, pageSize, filter: rangeMeta(range) };
   }
 }

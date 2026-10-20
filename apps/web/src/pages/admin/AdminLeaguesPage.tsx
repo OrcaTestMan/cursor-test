@@ -1,10 +1,38 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { EmptyFilterActions, FilterChoice, ListFilterBar, dateRangeChip, useRestoredDateFilter, type FilterChip } from '../../components/filters'
 import { IconTrophy } from '../../components/icons'
-import { EmptyState, ErrorBox, FormError, Loading, PageHeader, Pagination } from '../../components/ui'
-import { apiFetch, errorMessage, useApi } from '../../lib/api'
+import { EmptyState, ErrorBox, Field, FormError, Loading, PageHeader, Pagination } from '../../components/ui'
+import { apiFetch, buildQuery, errorMessage, useApi } from '../../lib/api'
 import { formatDate } from '../../lib/format'
+import { asPaged, dateFilterQuery, emptyDateFilter, optionalIntError, resultCountText, serializeDateFilter, uniqueSorted, withAllPeriod, withToday } from '../../lib/list-query'
+import { useQueryState } from '../../lib/params'
 import { btnPrimary, btnSmDanger, btnSmPrimary, btnSmSecondary, cardCls, inputCls, tdCls, thCls, trCls } from '../../lib/styles'
-import type { League } from '../../lib/types'
+import type { League, Paged } from '../../lib/types'
+
+type Extra = {
+  sport: string
+  hasMatches: '' | 'true' | 'false'
+  minMatchCount: string
+}
+
+const EMPTY_EXTRA: Extra = { sport: '', hasMatches: '', minMatchCount: '' }
+
+function extraFromParams(get: (key: string) => string): Extra {
+  const hasMatches = get('hasMatches')
+  return {
+    sport: get('sport'),
+    hasMatches: hasMatches === 'true' || hasMatches === 'false' ? hasMatches : '',
+    minMatchCount: get('minMatchCount'),
+  }
+}
+
+function extraQuery(extra: Extra): Record<string, string | null> {
+  return {
+    sport: extra.sport || null,
+    hasMatches: extra.hasMatches || null,
+    minMatchCount: extra.minMatchCount || null,
+  }
+}
 
 function validateLeague(name: string, sport: string): string | null {
   if (!name || name.length > 50) return '리그 이름은 1~50자로 입력해 주세요.'
@@ -13,12 +41,46 @@ function validateLeague(name: string, sport: string): string | null {
 }
 
 export default function AdminLeaguesPage() {
-  const { data, loading, error, reload } = useApi<League[]>('/leagues')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const qs = useQueryState()
+  const { applied: appliedDates, draft, setDraft, restoreNotice } = useRestoredDateFilter(qs, 'all', { keys: ['minMatchCount'] })
+  const appliedExtra = extraFromParams(qs.get)
+  const [extra, setExtra] = useState(appliedExtra)
+  const [filterAlert, setFilterAlert] = useState<string | null>(null)
+  const catalog = useApi<League[]>('/leagues')
+  const list = useApi<Paged<League> | League[]>(
+    `/admin/leagues${buildQuery({
+      ...dateFilterQuery(appliedDates),
+      ...extraQuery(appliedExtra),
+      page: qs.page,
+      pageSize: qs.pageSize,
+    })}`,
+  )
   const [editingId, setEditingId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  useEffect(() => {
+    setExtra(appliedExtra)
+  }, [qs.params.toString()])
+
+  const apply = (dates = draft, nextExtra = extra) => {
+    setFilterAlert(null)
+    qs.update({ ...serializeDateFilter(dates), ...extraQuery(nextExtra) })
+  }
+  const submit = () => {
+    const message = optionalIntError(extra.minMatchCount, '경기 수')
+    if (message) {
+      setFilterAlert(message)
+      return
+    }
+    apply()
+  }
+  const reset = () => {
+    const dates = { ...emptyDateFilter(), range: 'all' as const }
+    setDraft(dates)
+    setExtra(EMPTY_EXTRA)
+    qs.update({ ...serializeDateFilter(dates), ...extraQuery(EMPTY_EXTRA) }, { replace: true })
+  }
 
   const onDelete = async (league: League) => {
     if (!window.confirm(`'${league.name}' 리그를 삭제할까요?`)) return
@@ -26,7 +88,7 @@ export default function AdminLeaguesPage() {
     setActionError(null)
     try {
       await apiFetch<void>(`/admin/leagues/${league.id}`, { method: 'DELETE' })
-      reload()
+      list.reload()
     } catch (err) {
       setActionError(errorMessage(err))
     } finally {
@@ -34,24 +96,90 @@ export default function AdminLeaguesPage() {
     }
   }
 
-  const items = data ?? []
-  const shown = items.slice((page - 1) * pageSize, page * pageSize)
+  const paged = asPaged(list.data)
+  const shown = paged?.items ?? []
+  const total = paged?.total ?? 0
+  const sports = uniqueSorted((catalog.data ?? shown).map((item) => item.sport))
+  const chips: FilterChip[] = [dateRangeChip(appliedDates, () => apply(withToday(appliedDates), appliedExtra))]
+  if (appliedExtra.sport) {
+    chips.push({ key: 'sport', label: `종목: ${appliedExtra.sport}`, onRemove: () => apply(appliedDates, { ...appliedExtra, sport: '' }) })
+  }
+  if (appliedExtra.hasMatches) {
+    chips.push({
+      key: 'hasMatches',
+      label: appliedExtra.hasMatches === 'true' ? '경기 있음' : '경기 없음',
+      onRemove: () => apply(appliedDates, { ...appliedExtra, hasMatches: '' }),
+    })
+  }
+  if (appliedExtra.minMatchCount) {
+    chips.push({
+      key: 'minMatchCount',
+      label: `경기 ${appliedExtra.minMatchCount}건 이상`,
+      onRemove: () => apply(appliedDates, { ...appliedExtra, minMatchCount: '' }),
+    })
+  }
 
   return (
     <div>
       <PageHeader icon={<IconTrophy size={20} />} title="리그 관리" subtitle="경기를 묶는 리그와 종목을 관리합니다." />
-      <AddLeagueForm onAdded={reload} />
+      <ListFilterBar
+        dateLabel="등록일 기준"
+        searchPlaceholder="리그 이름 검색"
+        draft={draft}
+        applied={appliedDates}
+        onDraft={setDraft}
+        onSubmit={submit}
+        onReset={reset}
+        restoreNotice={restoreNotice}
+        alert={filterAlert}
+        advancedCount={[appliedExtra.hasMatches, appliedExtra.minMatchCount].filter(Boolean).length}
+        chips={chips}
+        basic={
+          <FilterChoice
+            label="종목"
+            value={extra.sport}
+            onChange={(value) => setExtra({ ...extra, sport: value })}
+            items={[{ value: '', label: '전체 종목' }, ...sports.filter(Boolean).map((sport) => ({ value: sport, label: sport }))]}
+          />
+        }
+        advanced={
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="경기">
+              <FilterChoice
+                label="경기"
+                value={extra.hasMatches}
+                onChange={(value) => setExtra({ ...extra, hasMatches: value })}
+                items={[
+                  { value: '', label: '제한 없음' },
+                  { value: 'true', label: '있음' },
+                  { value: 'false', label: '없음' },
+                ]}
+              />
+            </Field>
+            <Field label="최소 경기 수">
+              <input value={extra.minMatchCount} onChange={(e) => setExtra({ ...extra, minMatchCount: e.target.value })} inputMode="numeric" className={inputCls} placeholder="예: 1" />
+            </Field>
+          </div>
+        }
+        summary={<p className="text-xs text-dim">{resultCountText(total, qs.page, qs.pageSize, '개')}</p>}
+      />
+      <AddLeagueForm onAdded={list.reload} />
       {actionError && (
         <div className="mb-3">
           <FormError message={actionError} />
         </div>
       )}
-      {loading ? (
+      {list.loading ? (
         <Loading />
-      ) : error ? (
-        <ErrorBox message={error} onRetry={reload} />
-      ) : items.length === 0 ? (
-        <EmptyState icon={<IconTrophy size={20} />} title="등록된 리그가 없습니다" description="위 입력란에서 첫 리그를 추가하세요." />
+      ) : list.error ? (
+        <ErrorBox message={list.error} onRetry={list.reload} />
+      ) : !paged || shown.length === 0 ? (
+        <EmptyState
+          icon={<IconTrophy size={20} />}
+          title="선택한 등록일 기간과 검색어에 맞는 리그가 없습니다."
+          description="기간을 넓히거나 조건을 초기화해 보세요."
+          action={<EmptyFilterActions onAllPeriod={() => apply(withAllPeriod(appliedDates), appliedExtra)} onReset={reset} />}
+        />
       ) : (
         <>
           <div className="overflow-x-auto rounded-xl border border-edge bg-card">
@@ -75,7 +203,7 @@ export default function AdminLeaguesPage() {
                       onCancel={() => setEditingId(null)}
                       onSaved={() => {
                         setEditingId(null)
-                        reload()
+                        list.reload()
                       }}
                     />
                   ) : (
@@ -102,14 +230,11 @@ export default function AdminLeaguesPage() {
             </table>
           </div>
           <Pagination
-            page={page}
-            pageSize={pageSize}
-            total={items.length}
-            onPage={setPage}
-            onPageSize={(size) => {
-              setPageSize(size)
-              setPage(1)
-            }}
+            page={qs.page}
+            pageSize={qs.pageSize}
+            total={total}
+            onPage={(p) => qs.update({ page: p }, true)}
+            onPageSize={(size) => qs.update({ pageSize: size })}
           />
         </>
       )}

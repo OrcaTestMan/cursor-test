@@ -23,6 +23,19 @@ export class SignupDto {
   password!: string;
 }
 
+export class ChangeNicknameDto {
+  @Transform(trimString)
+  @IsString({ message: '닉네임을 입력해 주세요.' })
+  @Length(2, 12, { message: NICKNAME_MESSAGE })
+  nickname!: string;
+}
+
+export class WithdrawDto {
+  @IsString({ message: '비밀번호를 입력해 주세요.' })
+  @IsNotEmpty({ message: '비밀번호를 입력해 주세요.' })
+  password!: string;
+}
+
 export class LoginDto {
   @IsString({ message: '아이디를 입력해 주세요.' })
   @IsNotEmpty({ message: '아이디를 입력해 주세요.' })

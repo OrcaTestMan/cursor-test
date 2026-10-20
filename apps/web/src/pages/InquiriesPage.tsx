@@ -1,17 +1,54 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
+import { EmptyFilterActions, ListFilterBar, OptionButtons, dateRangeChip, useRestoredDateFilter, type FilterChip } from '../components/filters'
 import { IconHeadset, IconPlus } from '../components/icons'
 import { EmptyState, ErrorBox, Field, FormError, InquiryStatusPill, Loading, PageHeader, Pagination } from '../components/ui'
 import { apiFetch, buildQuery, errorMessage, useApi } from '../lib/api'
 import { formatShort } from '../lib/format'
+import { dateFilterQuery, emptyDateFilter, resultCountText, serializeDateFilter, withAllPeriod, withToday } from '../lib/list-query'
+import { useQueryState } from '../lib/params'
 import { btnPrimary, btnSecondary, cardCls, inputCls, textareaCls } from '../lib/styles'
-import type { Inquiry, Paged } from '../lib/types'
+import type { Inquiry, InquiryStatus, Paged } from '../lib/types'
+
+type Extra = { status: InquiryStatus | '' }
+const EMPTY_EXTRA: Extra = { status: '' }
 
 export default function InquiriesPage() {
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const qs = useQueryState()
+  const { applied: appliedDates, draft, setDraft, restoreNotice } = useRestoredDateFilter(qs)
+  const statusParam = qs.get('status')
+  const appliedExtra: Extra = { status: statusParam === 'waiting' || statusParam === 'answered' ? statusParam : '' }
+  const [extra, setExtra] = useState(appliedExtra)
   const [writing, setWriting] = useState(false)
-  const { data, loading, error, reload } = useApi<Paged<Inquiry>>(`/inquiries${buildQuery({ page, pageSize })}`)
+
+  useEffect(() => {
+    setExtra(appliedExtra)
+  }, [qs.params.toString()])
+
+  const { data, loading, error, reload } = useApi<Paged<Inquiry>>(
+    `/inquiries${buildQuery({
+      ...dateFilterQuery(appliedDates),
+      status: appliedExtra.status || null,
+      page: qs.page,
+      pageSize: qs.pageSize,
+    })}`,
+  )
+
+  const apply = (dates = draft, nextExtra = extra) => qs.update({ ...serializeDateFilter(dates), status: nextExtra.status || null })
+  const reset = () => {
+    const dates = emptyDateFilter()
+    setDraft(dates)
+    setExtra(EMPTY_EXTRA)
+    qs.update({ ...serializeDateFilter(dates), status: null }, { replace: true })
+  }
+  const chips: FilterChip[] = [dateRangeChip(appliedDates, () => apply(withToday(appliedDates), appliedExtra))]
+  if (appliedExtra.status) {
+    chips.push({
+      key: 'status',
+      label: `상태: ${appliedExtra.status === 'waiting' ? '답변 대기' : '답변 완료'}`,
+      onRemove: () => apply(appliedDates, { status: '' }),
+    })
+  }
 
   const openForm = () => setWriting(true)
 
@@ -29,12 +66,36 @@ export default function InquiriesPage() {
           )
         }
       />
+      <ListFilterBar
+        dateLabel="문의일 기준"
+        searchPlaceholder="제목, 내용 검색"
+        draft={draft}
+        applied={appliedDates}
+        onDraft={setDraft}
+        onSubmit={() => apply()}
+        onReset={reset}
+        restoreNotice={restoreNotice}
+        chips={chips}
+        basic={
+          <OptionButtons
+            label="상태"
+            value={extra.status}
+            onChange={(value) => setExtra({ status: value })}
+            items={[
+              { value: '', label: '전체 상태' },
+              { value: 'waiting', label: '답변 대기' },
+              { value: 'answered', label: '답변 완료' },
+            ]}
+          />
+        }
+        summary={<p className="text-xs text-dim">{resultCountText(data?.total ?? 0, qs.page, qs.pageSize, '건')}</p>}
+      />
       {writing && (
         <InquiryForm
           onCancel={() => setWriting(false)}
           onCreated={() => {
             setWriting(false)
-            setPage(1)
+            qs.update({ page: null })
             reload()
           }}
         />
@@ -47,13 +108,9 @@ export default function InquiriesPage() {
         !writing && (
           <EmptyState
             icon={<IconHeadset size={20} />}
-            title="문의 내역이 없습니다"
-            description="궁금한 점이 있으면 언제든 문의해주세요."
-            action={
-              <button type="button" onClick={openForm} className={btnPrimary}>
-                문의하기
-              </button>
-            }
+            title="선택한 문의일 기간과 검색어에 맞는 문의가 없습니다."
+            description="기간을 넓히거나 조건을 초기화해 보세요."
+            action={<EmptyFilterActions onAllPeriod={() => apply(withAllPeriod(appliedDates), appliedExtra)} onReset={reset} />}
           />
         )
       ) : (
@@ -71,14 +128,11 @@ export default function InquiriesPage() {
             ))}
           </ul>
           <Pagination
-            page={page}
-            pageSize={pageSize}
+            page={qs.page}
+            pageSize={qs.pageSize}
             total={data.total}
-            onPage={setPage}
-            onPageSize={(size) => {
-              setPageSize(size)
-              setPage(1)
-            }}
+            onPage={(p) => qs.update({ page: p }, true)}
+            onPageSize={(size) => qs.update({ pageSize: size })}
           />
         </>
       )}

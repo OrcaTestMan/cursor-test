@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>필터 표준 1.2 · 회원 관리 미리보기</title>
+<style>
+:root{--bg:#f5f6f8;--panel:#fff;--line:#e7e9ee;--field:#8a93a1;--ink:#1a212b;--muted:#5b6472;--brand:#1b5bd7;--soft:#eef4ff;--error:#a52b25}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px "Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif}main{max-width:1500px;margin:38px auto;padding:0 26px}.heading{display:flex;justify-content:space-between;gap:14px;margin-bottom:20px}h1{font-size:22px;margin:0 0 7px}.sub{margin:0;color:var(--muted);line-height:1.65}.demo{height:max-content;white-space:nowrap;font-size:12px;background:var(--soft);color:var(--brand);border:1px solid #cbdcff;border-radius:6px;padding:6px 10px}
+.filters{background:#fff;border:1px solid var(--line);border-radius:9px;padding:10px 12px;box-shadow:0 1px 2px #1018280a}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.field{display:inline-flex;align-items:center;gap:6px;color:#4b5563;font-weight:650;white-space:nowrap}input,select,button{font:inherit;border-radius:7px;height:34px}input,select{border:1px solid var(--field);padding:5px 8px;background:#fff;color:var(--ink);min-width:0}select{padding-right:20px}button{border:1px solid #c3c9d2;background:#fff;color:#4b5563;padding:0 12px;font-weight:650;cursor:pointer;white-space:nowrap}button:hover{background:#f0f3f8}button:disabled{cursor:default;opacity:.6}input:focus-visible,select:focus-visible,button:focus-visible{outline:3px solid #1b5bd744;outline-offset:2px}.primary{background:var(--brand);border-color:var(--brand);color:#fff}.primary:hover{background:#1449b0}input:disabled{background:#f4f5f7;color:#606b7a}
+.dates{display:inline-flex;align-items:center;gap:6px;flex-shrink:0}.date-name{font-weight:650;color:#4b5563;white-space:nowrap}.dates input{width:134px}.date-field{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:12px;color:var(--muted)}.tilde{color:var(--muted)}.search-field{min-width:198px;flex:1;max-width:330px}.search-wrap{display:flex;align-items:center;position:relative;min-width:0;flex:1}.search-wrap input{width:100%;padding-right:30px}.search-wrap input::-webkit-search-cancel-button{display:none}.clear-q{position:absolute;right:4px;top:4px;border:0;padding:0;width:26px;height:26px;font-size:19px;line-height:1;color:var(--muted)}
+[hidden]{display:none!important}.advanced{border-top:1px solid var(--line);margin-top:11px;padding-top:11px}.count-group{display:inline-flex;align-items:center;gap:6px}.count-group input{width:80px}.draft,.errors,.notice{margin:9px 2px 0;line-height:1.7}.draft{color:#745807}.errors{color:var(--error);white-space:pre-line}.notice{padding:9px 12px;border:1px solid #d0def5;border-radius:7px;background:var(--soft);color:#244b87;margin:12px 0}.draft:empty,.errors:empty,.notice:empty{display:none}[aria-invalid=true]{border:2px solid var(--error)}
+.resultbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:15px 2px 10px;color:var(--muted);line-height:1.7}.more{color:var(--brand)}.badge{display:inline-grid;place-items:center;min-width:18px;height:18px;background:var(--soft);border-radius:5px;margin-left:4px}.resultbar select{height:30px;border-color:#c3c9d2}.resultbar .field{font-size:12px}.chips{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}.chip{font-size:12px;background:var(--soft);border:1px solid #cbdcff;color:#244b87;height:29px;padding:0 9px}.chip span{margin-left:8px;color:#536e98}.chips:empty{display:none}
+.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:9px;background:#fff}table{width:100%;border-collapse:collapse;white-space:nowrap;text-align:left}th{height:41px;background:#f9fafc;color:#4b5563;font-weight:650;border-bottom:1px solid var(--line);padding:0 14px}td{height:60px;padding:11px 14px;border-bottom:1px solid #f0f1f4}tbody tr:last-child td{border-bottom:0}.account{display:flex;align-items:center;gap:9px}.avatar{width:31px;height:31px;display:grid;place-items:center;border-radius:50%;background:#edf2fb;color:#44608c;font-weight:700}.name{font-weight:650}.userid{font-size:12px;color:var(--muted);margin-top:3px}.num{text-align:right;font-variant-numeric:tabular-nums}.quiet{color:var(--muted)}.pill{display:inline-block;background:#e9f6ef;color:#0f7a47;border-radius:5px;padding:3px 7px;font-size:12px}.blocked{background:#fcedeb;color:var(--error)}.empty{text-align:center;padding:30px 15px;color:var(--muted);line-height:1.8}.empty button{display:block;margin:12px auto 0;color:var(--brand)}.footer{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;line-height:1.7;margin-top:11px}
+@media(max-width:700px){main{margin:22px auto;padding:0 12px}.heading{gap:8px}h1{font-size:20px}.demo{font-size:11px;padding:5px 7px}.filters{padding:11px}.dates{width:100%;display:grid;grid-template-columns:minmax(0,1fr) 10px minmax(0,1fr);gap:6px;align-items:end}.date-name{grid-column:1/-1;font-size:12px}.date-field{display:flex;flex-direction:column;align-items:stretch;gap:5px;min-width:0}.dates input{width:100%;font-size:12px;padding:5px 6px;height:40px}.tilde{text-align:center;padding-bottom:11px}.search-field{width:100%;min-width:0;max-width:none;flex-basis:100%}.search-wrap input{height:40px}.clear-q{top:6px}.field{font-size:12px}button{min-height:40px}select{min-height:38px}.search-wrap .clear-q{min-height:28px;height:28px}.resultbar{align-items:flex-start;flex-direction:column;gap:8px}.chips .chip{min-height:36px;height:auto}.count-group{flex-wrap:wrap}.advanced .field{white-space:normal}.footer{flex-direction:column;gap:3px}table{font-size:12px}th,td{padding-left:10px;padding-right:10px}}
+</style>
+</head>
+<body>
+<main>
+  <div class="heading"><div><h1>회원 관리</h1><p class="sub">필요한 조건만 간결하게. 조회한 조건은 아래에서 바로 확인합니다.</p></div><span class="demo">샘플 · 1.2</span></div>
+  <form id="filterForm" class="filters" novalidate>
+    <div class="row">
+      <label class="field">상태<select name="status"><option value="">전체</option><option value="active">활성</option><option value="blocked">차단</option></select></label>
+      <label class="field">권한<select name="role"><option value="">전체</option><option value="user">일반회원</option><option value="admin">관리자</option></select></label>
+      <label class="field">기간<select name="period"><option value="today">오늘</option><option value="yesterday">어제</option><option value="last7">최근 7일</option><option value="last30">최근 30일</option><option value="week">이번 주</option><option value="month">이번 달</option><option value="all">전체기간</option><option value="custom">직접 지정</option></select></label>
+      <div class="dates" role="group" aria-labelledby="dateName"><span class="date-name" id="dateName">가입일</span><label class="date-field">시작<input type="date" name="from" aria-label="가입일 시작"></label><span class="tilde" aria-hidden="true">~</span><label class="date-field">종료<input type="date" name="to" aria-label="가입일 종료"></label></div>
+      <div class="field search-field"><label for="keyword">검색</label><span class="search-wrap"><input id="keyword" type="search" name="q" placeholder="회원번호 · 아이디 · 이름" maxlength="50"><button type="button" class="clear-q" id="clearKeyword" aria-label="검색어만 지우기" hidden>×</button></span></div>
+      <button class="primary" type="submit">조회</button><button type="button" id="resetFilters">초기화</button>
+    </div>
+    <div id="advanced" class="advanced" hidden><div class="row">
+      <span class="field">누적 글</span><div class="count-group"><label class="date-field">최소<input type="number" name="minPosts" min="0" step="1" inputmode="numeric" aria-label="최소 누적 글 수"></label><span aria-hidden="true">~</span><label class="date-field">최대<input type="number" name="maxPosts" min="0" step="1" inputmode="numeric" aria-label="최대 누적 글 수"></label></div>
+      <label class="field">로그인<select name="login"><option value="">전체</option><option value="yes">기록 있음</option><option value="no">기록 없음</option></select></label>
+    </div></div>
+    <p id="draft" class="draft" aria-live="polite"></p><p id="errors" class="errors" role="alert"></p>
+  </form>
+  <p id="notice" class="notice" role="status"></p>
+  <div class="resultbar"><span id="summary" aria-live="polite"></span><div class="row"><button class="more" type="button" id="toggleAdvanced" aria-expanded="false" aria-controls="advanced">상세 조건 <span id="advancedCount" class="badge">0</span></button><label class="field">정렬<select id="sort"><option value="newest">가입 최신순</option><option value="oldest">가입 오래된 순</option><option value="posts">글 많은 순</option></select></label></div></div>
+  <div id="chips" class="chips" aria-label="적용 조건"></div>
+  <div class="tablewrap"><table><thead><tr><th>회원번호</th><th>회원 정보</th><th>권한</th><th>상태</th><th class="num">누적 글</th><th class="num">누적 댓글</th><th>가입일</th><th>최근 로그인</th></tr></thead><tbody id="results"></tbody></table></div>
+  <div class="footer"><span>샘플 회원 8건으로 동작을 확인하는 미리보기입니다.</span><span>가입일 기준 · 한국 시간 · 서비스 API 미연결</span></div>
+</main>
+<script id="filter-core">
+const FilterCore=(()=>{
+  const formKeys=['status','role','period','from','to','q','minPosts','maxPosts','login'];
+  const keys=[...formKeys,'sort'];
+  const options={status:['','active','blocked'],role:['','user','admin'],period:['today','yesterday','last7','last30','week','month','all','custom'],login:['','yes','no'],sort:['newest','oldest','posts']};
+  function today(){const p=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=t=>p.find(x=>x.type===t).value;return `${get('year')}-${get('month')}-${get('day')}`}
+  function isDate(v){if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v)||Number(v.slice(0,4))<1)return false;const d=new Date(v+'T00:00:00Z');return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===v}
+  function add(v,n){const d=new Date(v+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
+  function defaults(t=today()){return {status:'',role:'',period:'today',from:t,to:t,q:'',minPosts:'',maxPosts:'',login:'',sort:'newest'}}
+  function range(mode,t){if(mode==='yesterday')return[add(t,-1),add(t,-1)];if(mode==='last7')return[add(t,-6),t];if(mode==='last30')return[add(t,-29),t];if(mode==='week'){const weekday=new Date(t+'T00:00:00Z').getUTCDay();return[add(t,-((weekday+6)%7)),t]}if(mode==='month')return[t.slice(0,8)+'01',t];return[t,t]}
+  function resolve(s,t=today()){const n={...s};if(n.period==='all')n.from=n.to='';else if(n.period!=='custom')[n.from,n.to]=range(n.period,t);return n}
+  function isCount(v){return v===''||(/^\d+$/.test(v)&&Number.isSafeInteger(Number(v)))}
+  function canonical(s){const n={...s,q:s.q.trim().replace(/\s+/g,' ')};for(const k of ['minPosts','maxPosts'])if(n[k]!==''&&isCount(n[k]))n[k]=String(Number(n[k]));return n}
+  function validate(s,badFields=[]){const e=[];for(const k of ['status','role','period','login','sort'])if(!options[k].includes(s[k]))e.push({fields:[k],message:'선택할 수 없는 조건입니다.'});
+    if(s.period!=='all'){if(!isDate(s.from))e.push({fields:['from'],message:'가입일 시작을 실제 달력 날짜로 입력해 주세요.'});if(!isDate(s.to))e.push({fields:['to'],message:'가입일 종료를 실제 달력 날짜로 입력해 주세요.'});if(isDate(s.from)&&isDate(s.to)&&s.from>s.to)e.push({fields:['from','to'],message:'가입일 시작은 종료보다 늦을 수 없습니다.'})}
+    for(const k of ['minPosts','maxPosts'])if(badFields.includes(k)||!isCount(s[k]))e.push({fields:[k],message:(k==='minPosts'?'최소':'최대')+' 누적 글 수는 표현 가능한 0 이상의 정수로 입력해 주세요.'});
+    if(isCount(s.minPosts)&&isCount(s.maxPosts)&&s.minPosts!==''&&s.maxPosts!==''&&Number(s.minPosts)>Number(s.maxPosts))e.push({fields:['minPosts','maxPosts'],message:'최소 글 수는 최대 글 수보다 클 수 없습니다.'});
+    if(s.q.length>50)e.push({fields:['q'],message:'검색어는 50자까지 입력해 주세요.'});return e}
+  function fromURL(params,t=today()){const s=defaults(t),issues=[];const label={status:'상태',role:'권한',period:'기간',login:'로그인',sort:'정렬'};
+    for(const k of ['status','role','period','login','sort']){const v=params.get(k);if(v===null)continue;if(options[k].includes(v))s[k]=v;else issues.push(label[k]+'을 기본값으로 변경했습니다.')}
+    const q=params.get('q')||'';s.q=q.trim().replace(/\s+/g,' ');if(s.q.length>50){s.q=s.q.slice(0,50);issues.push('검색어를 50자로 줄였습니다.')}
+    for(const k of ['minPosts','maxPosts']){const v=params.get(k)||'';if(isCount(v))s[k]=v;else issues.push((k==='minPosts'?'최소':'최대')+' 글 수 조건을 해제했습니다.')}
+    if(s.minPosts!==''&&s.maxPosts!==''&&Number(s.minPosts)>Number(s.maxPosts)){s.minPosts=s.maxPosts='';issues.push('역전된 글 수 범위만 해제했습니다.')}
+    if(s.period==='custom'){s.from=params.get('from')||'';s.to=params.get('to')||'';if(!isDate(s.from)||!isDate(s.to)||s.from>s.to){s.period='today';issues.push('잘못된 가입일 기간만 오늘로 변경했습니다.')}}
+    return {state:canonical(resolve(s,t)),issues}}
+  function toURL(s,current){const u=new URL(current);for(const k of keys)u.searchParams.delete(k);u.searchParams.set('period',s.period);for(const k of keys){if(k==='period'||s[k]===''||(k==='sort'&&s[k]==='newest'))continue;if((k==='from'||k==='to')&&s.period!=='custom')continue;u.searchParams.set(k,s[k])}return u.pathname+u.search+u.hash}
+  return {formKeys,keys,today,isDate,add,defaults,resolve,isCount,canonical,validate,fromURL,toURL};
+})();
+</script>
+<script id="filter-ui">
+(()=>{
+  const C=FilterCore,form=document.querySelector('#filterForm'),f=form.elements,sort=document.querySelector('#sort');
+  const summary=document.querySelector('#summary'),tbody=document.querySelector('#results'),chips=document.querySelector('#chips'),draft=document.querySelector('#draft'),errors=document.querySelector('#errors'),notice=document.querySelector('#notice'),clearKeyword=document.querySelector('#clearKeyword');
+  let applied;const base=C.today();
+  const data=[
+    {id:1008,name:'테스트회원 08',username:'sample08',role:'user',status:'active',posts:12,comments:36,joined:base,login:base},
+    {id:1007,name:'테스트회원 07',username:'sample07',role:'user',status:'active',posts:0,comments:0,joined:base,login:null},
+    {id:1006,name:'테스트회원 06',username:'sample06',role:'user',status:'blocked',posts:5,comments:18,joined:base,login:base},
+    {id:1005,name:'테스트관리자',username:'sample_admin',role:'admin',status:'active',posts:23,comments:54,joined:base,login:base},
+    {id:1004,name:'테스트회원 04',username:'sample04',role:'user',status:'active',posts:18,comments:21,joined:C.add(base,-1),login:base},
+    {id:1003,name:'테스트회원 03',username:'sample03',role:'user',status:'active',posts:3,comments:4,joined:C.add(base,-3),login:C.add(base,-1)},
+    {id:1002,name:'테스트회원 02',username:'sample02',role:'user',status:'blocked',posts:1,comments:2,joined:C.add(base,-14),login:C.add(base,-2)},
+    {id:1001,name:'테스트회원 01',username:'sample01',role:'user',status:'active',posts:30,comments:81,joined:C.add(base,-45),login:C.add(base,-32)}
+  ];
+  const lower=v=>v.toLocaleLowerCase('ko-KR');
+  function read(){const s={sort:sort.value};for(const k of C.formKeys)s[k]=f[k].value;return s}
+  function setDisabled(){f.from.disabled=f.to.disabled=f.period.value==='all'}
+  function fill(s){for(const k of C.formKeys)f[k].value=s[k];sort.value=s.sort;setDisabled()}
+  function cleanErrors(){errors.textContent='';for(const k of C.formKeys){f[k].removeAttribute('aria-invalid');f[k].removeAttribute('aria-describedby')}}
+  function displayErrors(list){cleanErrors();errors.textContent=list.map(e=>e.message).join('\n');for(const e of list)for(const k of e.fields){const input=k==='sort'?sort:f[k];input.setAttribute('aria-invalid','true');input.setAttribute('aria-describedby','errors')}if(list.length){const key=list[0].fields[0];if(['minPosts','maxPosts','login'].includes(key))openAdvanced(true);(key==='sort'?sort:f[key]).focus()}}
+  function onEdit(){const s=C.canonical(read());draft.textContent=applied&&C.keys.every(k=>s[k]===applied[k])?'':'조건이 변경되었습니다. 조회를 눌러 적용해 주세요.';clearKeyword.hidden=f.q.value===''}
+  function writeURL(mode){const next=C.toURL(applied,location.href);if(next!==location.pathname+location.search+location.hash)history[mode==='push'?'pushState':'replaceState'](null,'',next)}
+  function cell(row,value,cls){const td=document.createElement('td');td.textContent=value;if(cls)td.className=cls;row.append(td);return td}
+  function chip(text,keys){const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=text;const x=document.createElement('span');x.textContent='×';x.setAttribute('aria-hidden','true');b.append(x);b.setAttribute('aria-label',text+' 조건 해제');b.addEventListener('click',()=>{partial(keys);(chips.querySelector('button')||f.q).focus()});chips.append(b)}
+  function render(){const s=applied;const words=lower(s.q).split(/\s+/).filter(Boolean);let rows=data.filter(r=>(!s.status||r.status===s.status)&&(!s.role||r.role===s.role)&&(s.period==='all'||r.joined>=s.from&&r.joined<=s.to)&&(s.minPosts===''||r.posts>=Number(s.minPosts))&&(s.maxPosts===''||r.posts<=Number(s.maxPosts))&&(!s.login||(s.login==='yes'?r.login!==null:r.login===null))&&words.every(w=>String(r.id)===w.replace(/^#/,'')||lower(r.name).includes(w)||lower(r.username).includes(w)));
+    rows.sort((a,b)=>s.sort==='posts'?b.posts-a.posts||b.id-a.id:s.sort==='oldest'?a.joined.localeCompare(b.joined)||a.id-b.id:b.joined.localeCompare(a.joined)||b.id-a.id);tbody.replaceChildren();
+    for(const r of rows){const tr=document.createElement('tr');cell(tr,'#'+r.id,'quiet');const td=cell(tr,'');const account=document.createElement('div');account.className='account';const avatar=document.createElement('span');avatar.className='avatar';avatar.textContent=r.role==='admin'?'관':'회';const names=document.createElement('div');const name=document.createElement('div');name.className='name';name.textContent=r.name;const user=document.createElement('div');user.className='userid';user.textContent=r.username;names.append(name,user);account.append(avatar,names);td.append(account);cell(tr,r.role==='admin'?'관리자':'일반회원','quiet');const status=cell(tr,'');const pill=document.createElement('span');pill.className='pill'+(r.status==='blocked'?' blocked':'');pill.textContent=r.status==='active'?'활성':'차단';status.append(pill);cell(tr,r.posts,'num');cell(tr,r.comments,'num');cell(tr,r.joined);cell(tr,r.login||'기록 없음','quiet');tbody.append(tr)}
+    if(!rows.length){const tr=document.createElement('tr'),td=cell(tr,'선택한 기간과 조건에 맞는 회원이 없습니다.','empty');td.colSpan=8;if(s.period!=='all'){const b=document.createElement('button');b.type='button';b.textContent='검색 조건 유지하고 전체기간 조회';b.addEventListener('click',()=>partial(['period','from','to'],{period:'all',from:'',to:''}));td.append(b)}tbody.append(tr)}
+    summary.textContent='가입일 기준 · '+(s.period==='all'?'전체기간':s.from.replaceAll('-','.')+' ~ '+s.to.replaceAll('-','.'))+' · 검색 결과 '+rows.length+'명';
+    chips.replaceChildren();if(s.status)chip('상태: '+(s.status==='active'?'활성':'차단'),['status']);if(s.role)chip('권한: '+(s.role==='user'?'일반회원':'관리자'),['role']);if(s.period!=='today')chip('기간: '+(s.period==='custom'?s.from+' ~ '+s.to:[...f.period.options].find(o=>o.value===s.period).textContent),['period','from','to']);if(s.q)chip('검색: '+s.q,['q']);if(s.minPosts!==''||s.maxPosts!=='')chip('누적 글: '+(s.minPosts||'0')+' ~ '+(s.maxPosts||'제한 없음'),['minPosts','maxPosts']);if(s.login)chip(s.login==='yes'?'로그인: 기록 있음':'로그인: 기록 없음',['login']);
+    const count=Number(s.minPosts!==''||s.maxPosts!=='')+Number(s.login!=='');document.querySelector('#advancedCount').textContent=count;
+  }
+  function apply(){const s=C.resolve(read());const bad=C.formKeys.filter(k=>f[k].validity.badInput);const list=C.validate(s,bad);displayErrors(list);if(list.length)return;applied=C.canonical(s);fill(applied);notice.textContent='';render();onEdit();writeURL('push')}
+  function partial(keys,override={}){const previous=applied,d=read(),def=C.defaults();const n={...applied};for(const k of keys)n[k]=Object.hasOwn(override,k)?override[k]:def[k];applied=C.resolve(n);for(const k of keys)f[k].value=applied[k];if(!keys.includes('period')&&d.period===previous.period&&d.from===previous.from&&d.to===previous.to){f.from.value=applied.from;f.to.value=applied.to}setDisabled();cleanErrors();notice.textContent='';render();onEdit();writeURL('push')}
+  function restore(){const result=C.fromURL(new URLSearchParams(location.search));applied=result.state;fill(applied);cleanErrors();notice.textContent=result.issues.join(' ');render();onEdit();writeURL('replace')}
+  function openAdvanced(open){const panel=document.querySelector('#advanced'),b=document.querySelector('#toggleAdvanced');panel.hidden=!open;b.setAttribute('aria-expanded',String(open))}
+  f.period.addEventListener('change',()=>{const s=C.resolve(read());f.from.value=s.from;f.to.value=s.to;setDisabled()});for(const input of [f.from,f.to])input.addEventListener('input',()=>f.period.value='custom');
+  form.addEventListener('input',()=>{cleanErrors();onEdit()});form.addEventListener('change',onEdit);form.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.isComposing)e.preventDefault()});form.addEventListener('submit',e=>{e.preventDefault();apply()});
+  clearKeyword.addEventListener('click',()=>{f.q.value='';cleanErrors();onEdit();f.q.focus()});
+  document.querySelector('#resetFilters').addEventListener('click',()=>{applied=C.defaults();fill(applied);cleanErrors();notice.textContent='';render();onEdit();writeURL('push')});
+  document.querySelector('#toggleAdvanced').addEventListener('click',()=>openAdvanced(document.querySelector('#advanced').hidden));sort.addEventListener('change',()=>{applied={...applied,sort:sort.value};render();onEdit();writeURL('push')});window.addEventListener('popstate',restore);restore();
+})();
+</script>
+</body>
+</html>

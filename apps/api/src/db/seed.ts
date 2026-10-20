@@ -1,21 +1,29 @@
 import { Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, count, eq, gt, gte, inArray, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { hashPassword } from '../auth/password.js';
 import { addDays, kstToday } from '../common/kst.js';
 import * as schema from './schema.js';
 import {
+  commentLikes,
   comments,
+  forbiddenWords,
   inquiries,
   leagues,
+  matchCheers,
   matches,
+  matchPredictions,
   messages,
   messageSends,
+  postLikes,
   posts,
   settings,
+  teams,
   users,
 } from './schema.js';
+
+type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 type MatchStatus = (typeof matches.$inferInsert)['status'];
 
@@ -84,6 +92,7 @@ async function seed() {
       .limit(1);
     if (existing) {
       logger.log('이미 예시 데이터가 있어 건너뜁니다.');
+      await seedBeta(db);
       return;
     }
 
@@ -299,9 +308,381 @@ async function seed() {
     });
 
     logger.log('예시 데이터를 넣었습니다.');
+    await seedBeta(db);
   } finally {
     await client.end();
   }
+}
+
+const FREE_TAGS = ['잡담', '질문', '정보', '유머'];
+const MATCH_TAGS = ['축구', '야구', '해외축구'];
+const HUMOR_TAGS = ['유머', '움짤', '이슈'];
+const REVIEW_TAGS = ['직관', '후기', '분석'];
+const NEWS_TAGS = ['속보', '이적', '공식'];
+const EXTRA_USERS = [
+  { username: 'user3', nickname: '축구매니아' },
+  { username: 'user4', nickname: '야구팬' },
+  { username: 'user5', nickname: '해외팬' },
+] as const;
+
+function mergeTags(current: string[], extra: readonly string[]) {
+  const seen = new Set(current);
+  const merged = [...current];
+  for (const tag of extra) {
+    if (!seen.has(tag)) {
+      merged.push(tag);
+      seen.add(tag);
+    }
+  }
+  return merged;
+}
+
+/** 경기 팀 이름을 그대로 팀에 넣는다. 비슷한 이름은 합치지 않는다. */
+async function seedTeams(db: Db) {
+  const leagueRows = await db
+    .select({ id: leagues.id, name: leagues.name })
+    .from(leagues);
+  const byName = new Map(leagueRows.map((row) => [row.name, row.id]));
+  const values = LEAGUES.flatMap((league) => {
+    const leagueId = byName.get(league.name) ?? null;
+    return league.teams.map(([name]) => ({
+      name,
+      sport: league.sport,
+      leagueId,
+    }));
+  });
+  if (values.length === 0) return;
+  await db.insert(teams).values(values).onConflictDoNothing();
+}
+
+/** 리그가 있어도 베타 예시(말머리·추가 회원·추천·응원·금칙어)를 넣는다. */
+async function seedBeta(db: Db) {
+  await seedTeams(db);
+  await db.insert(settings).values({ id: 1 }).onConflictDoNothing();
+  const [current] = await db
+    .select({
+      freeTags: settings.freeTags,
+      matchTags: settings.matchTags,
+      humorTags: settings.humorTags,
+      reviewTags: settings.reviewTags,
+      newsTags: settings.newsTags,
+    })
+    .from(settings)
+    .where(eq(settings.id, 1));
+  if (current) {
+    await db
+      .update(settings)
+      .set({
+        freeTags: mergeTags(current.freeTags, FREE_TAGS),
+        matchTags: mergeTags(current.matchTags, MATCH_TAGS),
+        humorTags: mergeTags(current.humorTags, HUMOR_TAGS),
+        reviewTags: mergeTags(current.reviewTags, REVIEW_TAGS),
+        newsTags: mergeTags(current.newsTags, NEWS_TAGS),
+      })
+      .where(eq(settings.id, 1));
+  }
+
+  const demoPassword = await hashPassword('user1234!');
+  await db
+    .insert(users)
+    .values(
+      EXTRA_USERS.map((user) => ({
+        username: user.username,
+        nickname: user.nickname,
+        passwordHash: demoPassword,
+      })),
+    )
+    .onConflictDoNothing();
+
+  await db
+    .insert(users)
+    .values({
+      username: 'test',
+      nickname: '테스트',
+      passwordHash: await hashPassword('test'),
+    })
+    .onConflictDoNothing();
+
+  const untagged = await db
+    .select({ id: posts.id, category: posts.category })
+    .from(posts)
+    .where(isNull(posts.tag));
+  let freeIndex = 0;
+  let matchIndex = 0;
+  for (const post of untagged) {
+    let tag: string | null = null;
+    if (post.category === 'free') {
+      tag = FREE_TAGS[freeIndex % FREE_TAGS.length];
+      freeIndex += 1;
+    } else if (post.category === 'match') {
+      tag = MATCH_TAGS[matchIndex % MATCH_TAGS.length];
+      matchIndex += 1;
+    }
+    if (tag) {
+      await db.update(posts).set({ tag }).where(eq(posts.id, post.id));
+    }
+  }
+
+  const demoUsers = await db
+    .select({ id: users.id, username: users.username })
+    .from(users)
+    .where(
+      inArray(users.username, [
+        'user1',
+        'user2',
+        'user3',
+        'user4',
+        'user5',
+      ]),
+    );
+  const [popular] = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(gte(posts.likeCount, 5))
+    .limit(1);
+  if (!popular) {
+    const [target] = await db
+      .select({ id: posts.id, authorId: posts.authorId })
+      .from(posts)
+      .where(eq(posts.status, 'visible'))
+      .limit(1);
+    if (target) {
+      const likers = demoUsers
+        .filter((user) => user.id !== target.authorId)
+        .slice(0, 5);
+      if (likers.length > 0) {
+        await db
+          .insert(postLikes)
+          .values(likers.map((user) => ({ postId: target.id, userId: user.id })))
+          .onConflictDoNothing();
+        const [{ total }] = await db
+          .select({ total: count() })
+          .from(postLikes)
+          .where(eq(postLikes.postId, target.id));
+        await db
+          .update(posts)
+          .set({ likeCount: total })
+          .where(eq(posts.id, target.id));
+      }
+    }
+  }
+
+  const [openMatch] = await db
+    .select({ id: matches.id })
+    .from(matches)
+    .where(and(eq(matches.status, 'scheduled'), gt(matches.kickoffAt, new Date())))
+    .limit(1);
+  const [finishedMatch] = await db
+    .select({ id: matches.id })
+    .from(matches)
+    .where(eq(matches.status, 'finished'))
+    .limit(1);
+  const [u1, u2, u3] = demoUsers;
+  if (openMatch && u1) {
+    await db
+      .insert(matchCheers)
+      .values({ matchId: openMatch.id, userId: u1.id, side: 'home' })
+      .onConflictDoNothing();
+    await db
+      .insert(matchPredictions)
+      .values({ matchId: openMatch.id, userId: u1.id, pick: 'home' })
+      .onConflictDoNothing();
+  }
+  if (openMatch && u2) {
+    await db
+      .insert(matchCheers)
+      .values({ matchId: openMatch.id, userId: u2.id, side: 'away' })
+      .onConflictDoNothing();
+    await db
+      .insert(matchPredictions)
+      .values({ matchId: openMatch.id, userId: u2.id, pick: 'away' })
+      .onConflictDoNothing();
+  }
+  if (finishedMatch && u3) {
+    await db
+      .insert(matchPredictions)
+      .values({ matchId: finishedMatch.id, userId: u3.id, pick: 'home' })
+      .onConflictDoNothing();
+  }
+
+  await db
+    .insert(forbiddenWords)
+    .values({ word: '비속어예시' })
+    .onConflictDoNothing();
+
+    await seedCommunity(db);
+    logger.log('베타 예시 데이터를 반영했습니다.');
+  }
+
+function actualPick(homeScore: number, awayScore: number) {
+  if (homeScore > awayScore) return 'home' as const;
+  if (homeScore < awayScore) return 'away' as const;
+  return 'draw' as const;
+}
+
+/** 유머·직관후기·뉴스 글, 댓글 추천, 예측 랭킹용 예시 */
+async function seedCommunity(db: Db) {
+  const demoUsers = await db
+    .select({ id: users.id, username: users.username })
+    .from(users)
+    .where(
+      inArray(users.username, ['user1', 'user2', 'user3', 'user4', 'user5']),
+    );
+  const byName = new Map(demoUsers.map((user) => [user.username, user]));
+  const u1 = byName.get('user1');
+  const u2 = byName.get('user2');
+  const u3 = byName.get('user3');
+  const u4 = byName.get('user4');
+  const u5 = byName.get('user5');
+  if (!u1 || !u2 || !u3 || !u4 || !u5) return;
+
+  const hoursAgo = (hours: number) =>
+    new Date(Date.now() - hours * 60 * 60 * 1000);
+
+  const [humorExists] = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(eq(posts.category, 'humor'))
+    .limit(1);
+
+  if (!humorExists) {
+    const created = await db
+      .insert(posts)
+      .values([
+        {
+          category: 'humor',
+          authorId: u3.id,
+          tag: '유머',
+          title: '심판이 홈런을 파울이라고 한 표정',
+          body: '그 순간 벤치 표정이 너무 웃겨서 캡처했습니다. 다들 보셨나요?',
+          createdAt: hoursAgo(18),
+        },
+        {
+          category: 'humor',
+          authorId: u2.id,
+          tag: '이슈',
+          title: '오늘 중계 해설이 또 그 말 했습니다',
+          body: '매 경기 같은 레퍼토리면 응원가처럼 따라 부르겠습니다.',
+          createdAt: hoursAgo(12),
+        },
+        {
+          category: 'review',
+          authorId: u4.id,
+          tag: '직관',
+          title: '잠실 외야 1층 직관 후기',
+          body: '햇빛은 좀 강했지만 응원 소리가 가까워서 좋았습니다. 다음엔 모자도 챙기세요.',
+          createdAt: hoursAgo(28),
+        },
+        {
+          category: 'review',
+          authorId: u1.id,
+          tag: '분석',
+          title: '지난 주말 경기, 후반 교체가 승부처였습니다',
+          body: '교체 이후 템포가 확 살아났고 세트피스도 날카로웠어요. 다음 경기도 이 템포면 좋겠습니다.',
+          createdAt: hoursAgo(36),
+        },
+        {
+          category: 'news',
+          authorId: u5.id,
+          tag: '속보',
+          title: '선발 투수 교체 소식 나왔습니다',
+          body: '구단에서 컨디션 조절이라고 밝혔습니다. 자세한 라인업은 경기 전에 다시 확인하세요.',
+          createdAt: hoursAgo(8),
+        },
+        {
+          category: 'news',
+          authorId: u3.id,
+          tag: '공식',
+          title: '주중 경기 입장 안내가 바뀌었습니다',
+          body: '게이트 오픈이 30분 앞당겨졌고, 우천 시 환불 규정도 공지에 올라왔습니다.',
+          createdAt: hoursAgo(6),
+        },
+      ])
+      .returning({ id: posts.id, category: posts.category });
+
+    const humor1 = created[0];
+    const review1 = created[2];
+    const news1 = created[4];
+    if (humor1 && review1 && news1) {
+      const newComments = await db
+        .insert(comments)
+        .values([
+          {
+            postId: humor1.id,
+            authorId: u1.id,
+            body: '진짜 그 장면만 반복 재생 중입니다.',
+            createdAt: hoursAgo(16),
+          },
+          {
+            postId: humor1.id,
+            authorId: u4.id,
+            body: '벤치 리액션이 더 웃겼어요.',
+            createdAt: hoursAgo(15),
+          },
+          {
+            postId: review1.id,
+            authorId: u2.id,
+            body: '저도 그 자리 가봤는데 시야는 괜찮았습니다.',
+            createdAt: hoursAgo(20),
+          },
+          {
+            postId: news1.id,
+            authorId: u2.id,
+            body: '선발 바뀌면 응원 전략도 다시 짜야겠네요.',
+            createdAt: hoursAgo(7),
+          },
+        ])
+        .returning({ id: comments.id, authorId: comments.authorId });
+
+      const likers = [u2, u3, u5];
+      for (const comment of newComments) {
+        const who = likers.filter((user) => user.id !== comment.authorId);
+        if (who.length === 0) continue;
+        await db
+          .insert(commentLikes)
+          .values(who.map((user) => ({ commentId: comment.id, userId: user.id })))
+          .onConflictDoNothing();
+        const [{ total }] = await db
+          .select({ total: count() })
+          .from(commentLikes)
+          .where(eq(commentLikes.commentId, comment.id));
+        await db
+          .update(comments)
+          .set({ likeCount: total })
+          .where(eq(comments.id, comment.id));
+      }
+    }
+  }
+
+  const finished = await db
+    .select({
+      id: matches.id,
+      homeScore: matches.homeScore,
+      awayScore: matches.awayScore,
+    })
+    .from(matches)
+    .where(eq(matches.status, 'finished'));
+
+  const pickCycle = ['home', 'draw', 'away'] as const;
+  for (const [index, match] of finished.entries()) {
+    if (match.homeScore == null || match.awayScore == null) continue;
+    const winner = actualPick(match.homeScore, match.awayScore);
+    await db
+      .insert(matchPredictions)
+      .values([
+        { matchId: match.id, userId: u3.id, pick: winner },
+        { matchId: match.id, userId: u4.id, pick: 'home' },
+        {
+          matchId: match.id,
+          userId: u5.id,
+          pick: pickCycle[index % pickCycle.length],
+        },
+        { matchId: match.id, userId: u1.id, pick: winner === 'home' ? 'away' : 'home' },
+      ])
+      .onConflictDoNothing();
+  }
+
+  logger.log('커뮤니티 예시 데이터를 반영했습니다.');
 }
 
 await seed();

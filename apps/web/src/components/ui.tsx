@@ -1,4 +1,5 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router'
 import {
   CONTENT_STATUS_LABELS,
   INQUIRY_STATUS_LABELS,
@@ -7,9 +8,9 @@ import {
   ROLE_LABELS,
   USER_STATUS_LABELS,
 } from '../lib/format'
-import { cardCls, selectCls } from '../lib/styles'
+import { btnGhost, cardCls, selectCls } from '../lib/styles'
 import type { ContentStatus, InquiryStatus, MatchStatus, Role, UserStatus } from '../lib/types'
-import { IconAlert, IconChevronLeft, IconChevronRight, IconClose, IconInbox } from './icons'
+import { IconAlert, IconChevronLeft, IconChevronRight, IconChevronUp, IconClose, IconInbox } from './icons'
 
 export type Tone = 'green' | 'gold' | 'red' | 'blue' | 'gray'
 
@@ -24,7 +25,7 @@ const TONE_CLASSES: Record<Tone, string> = {
 export function Pill({ tone, children, pulse }: { tone: Tone; children: ReactNode; pulse?: boolean }) {
   return (
     <span
-      className={`inline-flex h-5 items-center gap-1 rounded-md px-2 text-xs font-semibold whitespace-nowrap ${TONE_CLASSES[tone]}`}
+      className={`inline-flex h-5 items-center gap-1 rounded-full px-2 text-xs font-semibold whitespace-nowrap ${TONE_CLASSES[tone]}`}
     >
       {pulse && <span className="size-1.5 animate-pulse rounded-full bg-current" />}
       {children}
@@ -63,13 +64,13 @@ export function RolePill({ role }: { role: Role }) {
 }
 
 export function UserStatusPill({ status }: { status: UserStatus }) {
-  return <Pill tone={status === 'active' ? 'green' : 'red'}>{USER_STATUS_LABELS[status]}</Pill>
+  return <Pill tone={status === 'active' ? 'green' : status === 'blocked' ? 'red' : 'gray'}>{USER_STATUS_LABELS[status]}</Pill>
 }
 
 export function CountBadge({ count, tone = 'gold' }: { count: number; tone?: 'gold' | 'red' | 'green' }) {
   if (count <= 0) return null
   const cls =
-    tone === 'gold' ? 'bg-gold text-on-accent' : tone === 'red' ? 'bg-danger text-fg' : 'bg-accent text-on-accent'
+    tone === 'gold' ? 'bg-gold text-on-accent' : tone === 'red' ? 'bg-danger text-fg' : 'bg-accent-fill text-on-accent'
   return (
     <span className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-bold ${cls}`}>
       {count > 99 ? '99+' : count}
@@ -82,20 +83,27 @@ export function PageHeader({
   title,
   subtitle,
   action,
+  backTo,
 }: {
   icon: ReactNode
   title: string
   subtitle?: string
   action?: ReactNode
+  backTo?: string
 }) {
+  const location = useLocation()
+  const fallback = backTo ?? (location.pathname.startsWith('/admin') ? '/admin' : '/')
   return (
     <div className="mb-5 flex flex-wrap items-center gap-3">
-      <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">{icon}</div>
+      <div className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-accent-soft text-accent">{icon}</div>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-xl font-bold">{title}</h1>
+        <h1 className="truncate text-[22px] font-black tracking-tight">{title}</h1>
         {subtitle && <p className="mt-0.5 text-xs text-dim">{subtitle}</p>}
       </div>
-      {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {action}
+        <BackButton fallback={fallback} />
+      </div>
     </div>
   )
 }
@@ -106,6 +114,45 @@ export function Loading({ text = '불러오는 중...' }: { text?: string }) {
       <span className="size-4 animate-spin rounded-full border-2 border-edge border-t-accent" />
       {text}
     </div>
+  )
+}
+
+export function BackButton({ fallback = '/' }: { fallback?: string }) {
+  const navigate = useNavigate()
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const idx = window.history.state?.idx
+        if (typeof idx === 'number' && idx > 0) navigate(-1)
+        else navigate(fallback)
+      }}
+      className={`${btnGhost} h-9 shrink-0 px-2.5 text-sm`}
+    >
+      <IconChevronLeft size={16} />
+      뒤로
+    </button>
+  )
+}
+
+export function ScrollTop() {
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setShow(window.scrollY > 400)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+  if (!show) return null
+  return (
+    <button
+      type="button"
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      aria-label="맨 위로"
+      className="fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 grid size-10 place-items-center rounded-full border border-edge bg-panel text-fg shadow-lg hover:bg-card-hover"
+    >
+      <IconChevronUp size={18} />
+    </button>
   )
 }
 
@@ -184,13 +231,13 @@ export function SegmentedTabs<T extends string>({
   onChange: (value: T) => void
 }) {
   return (
-    <div className="inline-flex flex-wrap gap-1 rounded-lg border border-edge bg-card p-1">
+    <div className="inline-flex flex-wrap gap-1 rounded-full border border-edge bg-card p-1">
       {items.map((item) => (
         <button
           key={item.value}
           type="button"
           onClick={() => onChange(item.value)}
-          className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-semibold transition-colors ${
+          className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition-colors ${
             item.value === value ? 'bg-accent-soft text-accent' : 'text-dim hover:text-fg'
           }`}
         >
@@ -331,7 +378,7 @@ export function Toggle({
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${checked ? 'bg-accent' : 'bg-edge'}`}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${checked ? 'bg-accent-fill' : 'bg-edge'}`}
       >
         <span
           className={`absolute top-0.5 left-0.5 size-5 rounded-full bg-fg transition-transform ${checked ? 'translate-x-5' : ''}`}
@@ -376,8 +423,25 @@ export function Modal({
   )
 }
 
-export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
-  const dim = size === 'sm' ? 'size-7 text-[11px]' : 'size-8 text-xs'
+export function Avatar({
+  name,
+  uploadId,
+  size = 'md',
+}: {
+  name: string
+  uploadId?: number | null
+  size?: 'sm' | 'md' | 'lg'
+}) {
+  const dim = size === 'sm' ? 'size-7 text-[11px]' : size === 'lg' ? 'size-16 text-lg' : 'size-8 text-xs'
+  if (uploadId) {
+    return (
+      <img
+        src={`/api/files/${uploadId}`}
+        alt={name}
+        className={`${dim} shrink-0 rounded-full object-cover`}
+      />
+    )
+  }
   return (
     <span className={`grid ${dim} shrink-0 place-items-center rounded-full bg-accent-soft font-bold text-accent`}>
       {name.trim().slice(0, 2).toUpperCase() || '?'}

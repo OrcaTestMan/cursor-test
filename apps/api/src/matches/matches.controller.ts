@@ -9,8 +9,10 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { AdminOnly } from '../auth/auth.decorators.js';
+import { AdminOnly, CurrentUser } from '../auth/auth.decorators.js';
+import type { AuthUser } from '../auth/auth.types.js';
 import { ParseIdPipe } from '../common/parse-id.pipe.js';
+import { FansService } from '../fans/fans.service.js';
 import {
   AdminListMatchesDto,
   CreateMatchDto,
@@ -21,7 +23,10 @@ import { MatchesService } from './matches.service.js';
 
 @Controller('matches')
 export class MatchesController {
-  constructor(private readonly matchesService: MatchesService) {}
+  constructor(
+    private readonly matchesService: MatchesService,
+    private readonly fansService: FansService,
+  ) {}
 
   @Get()
   list(@Query() query: ListMatchesDto) {
@@ -29,8 +34,11 @@ export class MatchesController {
   }
 
   @Get(':id')
-  get(@Param('id', ParseIdPipe) id: number) {
-    return this.matchesService.get(id);
+  get(
+    @Param('id', ParseIdPipe) id: number,
+    @CurrentUser() user: AuthUser | undefined,
+  ) {
+    return this.fansService.getDetail(id, user);
   }
 }
 

@@ -7,6 +7,9 @@ export type AuthUser = {
   nickname: string;
   role: Role;
   status: UserStatus;
+  nicknameChangedAt: Date | null;
+  bio: string;
+  avatarUploadId: number | null;
   createdAt: Date;
 };
 

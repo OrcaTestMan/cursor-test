@@ -6,6 +6,26 @@ export const DEFAULT_SETTINGS: PublicSettings = {
   noticeBanner: '',
   signupEnabled: true,
   postApprovalRequired: false,
+  bestThreshold: 5,
+  freeTags: [],
+  matchTags: [],
+  humorTags: [],
+  reviewTags: [],
+  newsTags: [],
+}
+
+export function withSettingsDefaults(value?: Partial<PublicSettings> | null): PublicSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...value,
+    noticeBanner: value?.noticeBanner ?? DEFAULT_SETTINGS.noticeBanner,
+    freeTags: value?.freeTags ?? DEFAULT_SETTINGS.freeTags,
+    matchTags: value?.matchTags ?? DEFAULT_SETTINGS.matchTags,
+    humorTags: value?.humorTags ?? DEFAULT_SETTINGS.humorTags,
+    reviewTags: value?.reviewTags ?? DEFAULT_SETTINGS.reviewTags,
+    newsTags: value?.newsTags ?? DEFAULT_SETTINGS.newsTags,
+    bestThreshold: value?.bestThreshold ?? DEFAULT_SETTINGS.bestThreshold,
+  }
 }
 
 export type SettingsValue = {

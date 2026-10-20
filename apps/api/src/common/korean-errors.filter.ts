@@ -30,6 +30,13 @@ function toBody(exception: HttpException): ErrorBody {
   if (status === HttpStatus.PAYLOAD_TOO_LARGE) {
     return { ...body, message: '요청 내용이 너무 큽니다.' };
   }
+  if (status === HttpStatus.TOO_MANY_REQUESTS) {
+    return {
+      ...body,
+      message: message || '요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.',
+      error: 'Too Many Requests',
+    };
+  }
   return body;
 }
 

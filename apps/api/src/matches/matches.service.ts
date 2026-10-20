@@ -5,18 +5,19 @@ import {
   count,
   desc,
   eq,
-  gte,
   ilike,
-  lt,
+  isNotNull,
+  isNull,
   or,
+  sql,
   type SQL,
 } from 'drizzle-orm';
-import { addDays, kstDayRange, kstDayStart } from '../common/kst.js';
+import { dateCondition, rangeMeta, resolveDateRange } from '../common/date-range.js';
 import { pageParams } from '../common/pagination.js';
-import { likePattern } from '../common/text.js';
+import { andTokens, anyField, idFromToken, searchTokens, tokenPattern } from '../common/search-query.js';
 import { matchColumns } from '../db/columns.js';
 import { DbService } from '../db/db.service.js';
-import { leagues, matches } from '../db/schema.js';
+import { leagues, matches, teams } from '../db/schema.js';
 import {
   AdminListMatchesDto,
   CreateMatchDto,
@@ -42,18 +43,77 @@ export class MatchesService {
       .innerJoin(leagues, eq(matches.leagueId, leagues.id));
   }
 
-  list(query: ListMatchesDto) {
+  /**
+   * 공개 목록은 기간이 없으면 오늘(KST). 위젯·전체 일정은 호출 측에서 range=all 을 넘겨야 한다.
+   */
+  private async matchConditions(query: ListMatchesDto, requireActiveTeam: boolean) {
+    const range = resolveDateRange(query);
     const conditions: SQL[] = [];
-    if (query.date) {
-      const { start, end } = kstDayRange(query.date);
-      conditions.push(gte(matches.kickoffAt, start), lt(matches.kickoffAt, end));
+    const bounded = dateCondition(matches.kickoffAt, range);
+    if (bounded) conditions.push(bounded);
+    if (query.leagueId) conditions.push(eq(matches.leagueId, query.leagueId));
+    if (query.status) conditions.push(eq(matches.status, query.status));
+    if (query.sport) conditions.push(eq(leagues.sport, query.sport));
+    conditions.push(
+      ...andTokens(searchTokens(query.q), (token) => {
+        const pattern = tokenPattern(token);
+        const id = idFromToken(token);
+        return anyField([
+          ilike(matches.homeTeam, pattern),
+          ilike(matches.awayTeam, pattern),
+          ilike(leagues.name, pattern),
+          ilike(leagues.sport, pattern),
+          ilike(matches.venue, pattern),
+          id ? eq(matches.id, id) : undefined,
+        ]);
+      }),
+    );
+    if (query.teamId) {
+      const [team] = await this.dbService.db
+        .select({ name: teams.name, active: teams.active, sport: teams.sport })
+        .from(teams)
+        .where(eq(teams.id, query.teamId));
+      if (!team || (requireActiveTeam && !team.active)) {
+        return { range, conditions: null as SQL[] | null };
+      }
+      if (query.sport && team.sport !== query.sport) {
+        return { range, conditions: null as SQL[] | null };
+      }
+      if (query.side === 'home') {
+        conditions.push(eq(matches.homeTeam, team.name));
+      } else if (query.side === 'away') {
+        conditions.push(eq(matches.awayTeam, team.name));
+      } else {
+        conditions.push(
+          or(eq(matches.homeTeam, team.name), eq(matches.awayTeam, team.name))!,
+        );
+      }
     }
-    if (query.leagueId) {
-      conditions.push(eq(matches.leagueId, query.leagueId));
+    const kickoffHour = sql`extract(hour from timezone('Asia/Seoul', ${matches.kickoffAt}))`;
+    if (query.hourFrom !== undefined) {
+      conditions.push(sql`${kickoffHour} >= ${query.hourFrom}`);
     }
-    if (query.status) {
-      conditions.push(eq(matches.status, query.status));
+    if (query.hourTo !== undefined) {
+      conditions.push(sql`${kickoffHour} <= ${query.hourTo}`);
     }
+    if (query.hasScore === true) {
+      conditions.push(isNotNull(matches.homeScore), isNotNull(matches.awayScore));
+    }
+    if (query.hasScore === false) {
+      conditions.push(or(isNull(matches.homeScore), isNull(matches.awayScore))!);
+    }
+    if (query.missingScore === true) {
+      conditions.push(
+        eq(matches.status, 'finished'),
+        or(isNull(matches.homeScore), isNull(matches.awayScore))!,
+      );
+    }
+    return { range, conditions };
+  }
+
+  async list(query: ListMatchesDto) {
+    const { conditions } = await this.matchConditions(query, true);
+    if (!conditions) return [];
     return this.select()
       .where(and(...conditions))
       .orderBy(asc(matches.kickoffAt), asc(matches.id));
@@ -61,42 +121,30 @@ export class MatchesService {
 
   async listAdmin(query: AdminListMatchesDto) {
     const { page, pageSize, offset } = pageParams(query);
-    const conditions: SQL[] = [];
-    if (query.from) {
-      conditions.push(gte(matches.kickoffAt, kstDayStart(query.from)));
-    }
-    if (query.to) {
-      conditions.push(
-        lt(matches.kickoffAt, kstDayStart(addDays(query.to, 1))),
-      );
-    }
-    if (query.leagueId) {
-      conditions.push(eq(matches.leagueId, query.leagueId));
-    }
-    if (query.status) {
-      conditions.push(eq(matches.status, query.status));
-    }
-    if (query.q) {
-      const pattern = likePattern(query.q);
-      const teamMatch = or(
-        ilike(matches.homeTeam, pattern),
-        ilike(matches.awayTeam, pattern),
-      );
-      if (teamMatch) {
-        conditions.push(teamMatch);
-      }
+    const { range, conditions } = await this.matchConditions(query, false);
+    if (!conditions) {
+      return { items: [], total: 0, page, pageSize, filter: rangeMeta(range) };
     }
     const where = and(...conditions);
+    const sort = query.sort ?? 'kickoff_desc';
+    const order =
+      sort === 'kickoff_asc'
+        ? [asc(matches.kickoffAt), asc(matches.id)]
+        : [desc(matches.kickoffAt), desc(matches.id)];
 
     const [items, [{ total }]] = await Promise.all([
       this.select()
         .where(where)
-        .orderBy(desc(matches.kickoffAt), desc(matches.id))
+        .orderBy(...order)
         .limit(pageSize)
         .offset(offset),
-      this.dbService.db.select({ total: count() }).from(matches).where(where),
+      this.dbService.db
+        .select({ total: count() })
+        .from(matches)
+        .innerJoin(leagues, eq(matches.leagueId, leagues.id))
+        .where(where),
     ]);
-    return { items, total, page, pageSize };
+    return { items, total, page, pageSize, filter: rangeMeta(range) };
   }
 
   async findById(id: number) {

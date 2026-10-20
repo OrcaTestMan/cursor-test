@@ -5,7 +5,7 @@ alwaysApply: true
 
 # 프로젝트 규칙
 
-TypeScript 모노레포다. 화면은 `apps/web`, API는 `apps/api`다. 식별자, 파일명, 커밋 메시지는 영어다. 사용자에게 보이는 문구와 설명은 한국어다.
+TypeScript 모노레포다. 화면은 `apps/web`, API는 `apps/api`다. 식별자, 파일명, 커밋 메시지는 영어다. 사용자에게 보이는 문구와 설명은 한국어다. Next.js 앱이 아니다.
 
 ## 스택
 

@@ -1,0 +1,10 @@
+---
+description: 검색·필터·목록 정렬·기간 조회를 개발하거나 수정할 때 적용합니다.
+globs: "**/filters.tsx,**/list-query.ts,**/date-range.ts,**/search-query.ts"
+alwaysApply: false
+---
+
+- 공통은 `.cursor/rules/FILTERS.md`, 이 화면 예외는 `.cursor/rules/PAGES.md`만 읽는다. 둘을 매 작업마다 전부 읽지 않는다.
+- `DETAILS.md`는 막힌 항목만 연다. `PREVIEW.html`은 필터 레이아웃을 새로 잡을 때만 연다. 샘플 색·데이터는 복사하지 않는다.
+- 기본: 가로 패널, 통합검색 `q`, 오늘, 검색·초기화. 검색대상 선택·통합검색 게시판 드롭다운·다운로드는 넣지 않는다.
+- 버튼 문구는 **검색**. 예외는 PAGES.md가 FILTERS.md보다 앞선다.

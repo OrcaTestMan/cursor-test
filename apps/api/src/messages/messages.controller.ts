@@ -10,9 +10,12 @@ import {
 } from '@nestjs/common';
 import { AdminOnly, CurrentUser, LoginRequired } from '../auth/auth.decorators.js';
 import type { AuthUser } from '../auth/auth.types.js';
-import { PaginationQueryDto } from '../common/pagination.js';
 import { ParseIdPipe } from '../common/parse-id.pipe.js';
-import { SendMessageDto } from './dto/message.dto.js';
+import {
+  AdminListMessagesDto,
+  ListMineMessagesDto,
+  SendMessageDto,
+} from './dto/message.dto.js';
 import { MessagesService } from './messages.service.js';
 
 @Controller('messages')
@@ -21,7 +24,7 @@ export class MessagesController {
   constructor(private readonly messagesService: MessagesService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Query() query: PaginationQueryDto) {
+  list(@CurrentUser() user: AuthUser, @Query() query: ListMineMessagesDto) {
     return this.messagesService.listMine(user, query);
   }
 
@@ -52,7 +55,7 @@ export class AdminMessagesController {
   }
 
   @Get()
-  list(@Query() query: PaginationQueryDto) {
+  list(@Query() query: AdminListMessagesDto) {
     return this.messagesService.listSent(query);
   }
 }

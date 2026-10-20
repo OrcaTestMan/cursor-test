@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Put } from '@nestjs/common';
-import { AdminOnly } from '../auth/auth.decorators.js';
+import { AdminOnly, CurrentUser } from '../auth/auth.decorators.js';
+import type { AuthUser } from '../auth/auth.types.js';
 import { UpdateSettingsDto } from './dto/update-settings.dto.js';
 import { SettingsService } from './settings.service.js';
 
@@ -9,7 +10,7 @@ export class SettingsController {
 
   @Get('public')
   getPublic() {
-    return this.settingsService.get();
+    return this.settingsService.getPublic();
   }
 }
 
@@ -24,7 +25,7 @@ export class AdminSettingsController {
   }
 
   @Put()
-  update(@Body() dto: UpdateSettingsDto) {
-    return this.settingsService.update(dto);
+  update(@CurrentUser() user: AuthUser, @Body() dto: UpdateSettingsDto) {
+    return this.settingsService.update(user, dto);
   }
 }

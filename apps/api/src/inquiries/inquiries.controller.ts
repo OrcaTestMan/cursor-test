@@ -9,12 +9,12 @@ import {
 } from '@nestjs/common';
 import { AdminOnly, CurrentUser, LoginRequired } from '../auth/auth.decorators.js';
 import type { AuthUser } from '../auth/auth.types.js';
-import { PaginationQueryDto } from '../common/pagination.js';
 import { ParseIdPipe } from '../common/parse-id.pipe.js';
 import {
   AdminListInquiriesDto,
   AnswerInquiryDto,
   CreateInquiryDto,
+  ListMineInquiriesDto,
 } from './dto/inquiry.dto.js';
 import { InquiriesService } from './inquiries.service.js';
 
@@ -24,7 +24,7 @@ export class InquiriesController {
   constructor(private readonly inquiriesService: InquiriesService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Query() query: PaginationQueryDto) {
+  list(@CurrentUser() user: AuthUser, @Query() query: ListMineInquiriesDto) {
     return this.inquiriesService.listMine(user, query);
   }
 
@@ -56,7 +56,11 @@ export class AdminInquiriesController {
 
   @Post(':id/answer')
   @HttpCode(200)
-  answer(@Param('id', ParseIdPipe) id: number, @Body() dto: AnswerInquiryDto) {
-    return this.inquiriesService.answer(id, dto);
+  answer(
+    @Param('id', ParseIdPipe) id: number,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: AnswerInquiryDto,
+  ) {
+    return this.inquiriesService.answer(id, user, dto);
   }
 }

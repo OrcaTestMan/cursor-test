@@ -16,6 +16,14 @@ export function kstToday(now: Date = new Date()): string {
   return new Date(now.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** 한국 시간 'YYYY-MM-DD HH:mm' */
+export function formatKst(date: Date): string {
+  return new Date(date.getTime() + KST_OFFSET_MS)
+    .toISOString()
+    .slice(0, 16)
+    .replace('T', ' ');
+}
+
 export function addDays(date: string, days: number): string {
   return new Date(kstDayStart(date).getTime() + days * DAY_MS + KST_OFFSET_MS)
     .toISOString()

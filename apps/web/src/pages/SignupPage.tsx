@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { CenteredMessage, Field, FormError, Loading } from '../components/ui'
 import { errorMessage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { safeNext } from '../lib/format'
 import { useSettings } from '../lib/settings'
 import { btnPrimary, btnSecondary, cardCls, inputCls } from '../lib/styles'
+import { AuthShell } from './LoginPage'
 
 type Errors = { username?: string; nickname?: string; password?: string; confirm?: string }
 
@@ -33,19 +34,43 @@ export default function SignupPage() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
 
-  if (user && !sending) return <Navigate to={next} replace />
-  if (settingsLoading) return <Loading />
-  if (!settings.signupEnabled)
+  if (user && !sending) {
     return (
-      <CenteredMessage
-        title="현재 회원가입을 받지 않습니다."
-        description="나중에 다시 시도해 주세요."
-        action={
+      <AuthShell siteName={settings.siteName}>
+        <h1 className="text-center text-xl font-bold">이미 로그인되어 있습니다</h1>
+        <p className="mt-2 text-center text-sm text-dim">
+          {user.nickname}님으로 접속 중입니다. 가입 화면은 로그아웃 후에 이용할 수 있습니다.
+        </p>
+        <div className="mt-6 flex justify-center gap-2">
+          <Link to={next} className={btnPrimary}>
+            계속하기
+          </Link>
           <Link to="/" className={btnSecondary}>
             홈으로
           </Link>
-        }
-      />
+        </div>
+      </AuthShell>
+    )
+  }
+  if (settingsLoading)
+    return (
+      <AuthShell siteName={settings.siteName}>
+        <Loading />
+      </AuthShell>
+    )
+  if (!settings.signupEnabled)
+    return (
+      <AuthShell siteName={settings.siteName}>
+        <CenteredMessage
+          title="현재 회원가입을 받지 않습니다."
+          description="나중에 다시 시도해 주세요."
+          action={
+            <Link to="/login" className={btnSecondary}>
+              로그인
+            </Link>
+          }
+        />
+      </AuthShell>
     )
 
   const onSubmit = async (e: FormEvent) => {
@@ -57,7 +82,7 @@ export default function SignupPage() {
     setServerError(null)
     try {
       await signup({ username, nickname: nickname.trim(), password })
-      navigate(next, { replace: true })
+      navigate(next === '/' ? '/me?setup=teams' : next, { replace: true })
     } catch (err) {
       setServerError(errorMessage(err))
       setSending(false)
@@ -65,7 +90,7 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="mx-auto max-w-sm py-8">
+    <AuthShell siteName={settings.siteName}>
       <h1 className="text-center text-xl font-bold">회원가입</h1>
       <p className="mt-1 text-center text-xs text-dim">가입하면 바로 로그인됩니다.</p>
       <form onSubmit={onSubmit} className={`${cardCls} mt-6 space-y-4 p-6`} noValidate>
@@ -104,6 +129,6 @@ export default function SignupPage() {
           </Link>
         </p>
       </form>
-    </div>
+    </AuthShell>
   )
 }
