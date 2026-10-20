@@ -1,16 +1,22 @@
-name: app
+name: nex
 
 services:
   postgres:
     image: postgres:17
+    container_name: nex-postgres
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: app
+      POSTGRES_USER: nex
+      POSTGRES_PASSWORD: nex
+      POSTGRES_DB: nex
     ports:
       - "5432:5432"
+    volumes:
+      - nex_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      test: ["CMD-SHELL", "pg_isready -U nex -d nex"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+volumes:
+  nex_pg_data:

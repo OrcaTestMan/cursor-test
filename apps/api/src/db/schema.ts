@@ -1,105 +1,54 @@
-import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
   integer,
+  numeric,
   pgEnum,
   pgTable,
-  primaryKey,
   serial,
   text,
   timestamp,
   uniqueIndex,
   varchar,
-} from 'drizzle-orm/pg-core';
+} from 'drizzle-orm/pg-core'
 
-export const userRole = pgEnum('user_role', ['user', 'admin']);
+export const userRole = pgEnum('nex_user_role', ['member', 'admin'])
+export const userStatus = pgEnum('nex_user_status', ['active', 'blocked'])
+export const cashType = pgEnum('nex_cash_type', ['입금', '출금'])
+export const cashStatus = pgEnum('nex_cash_status', [
+  '대기',
+  '승인',
+  '거절',
+  '지급 실패',
+])
+export const betStatus = pgEnum('nex_bet_status', [
+  '진행 중',
+  '적중',
+  '미적중',
+  '취소',
+])
+export const casinoKind = pgEnum('nex_casino_kind', ['live', 'slot', 'other'])
+export const reviewRec = pgEnum('nex_review_rec', [
+  'void_review',
+  'weak_evidence',
+  'ambiguous',
+  'not_won',
+  'none',
+])
 
-export const userStatus = pgEnum('user_status', ['active', 'blocked', 'deleted']);
-
-export const matchStatus = pgEnum('match_status', [
-  'scheduled',
-  'live',
-  'finished',
-  'postponed',
-  'cancelled',
-]);
-
-export const postCategory = pgEnum('post_category', [
-  'notice',
-  'free',
-  'match',
-  'humor',
-  'review',
-  'news',
-]);
-
-export const contentStatus = pgEnum('content_status', [
-  'pending',
-  'visible',
-  'hidden',
-]);
-
-export const inquiryStatus = pgEnum('inquiry_status', ['waiting', 'answered']);
-
-export const users = pgTable('users', {
-  id: serial('id').primaryKey(),
-  username: varchar('username', { length: 20 }).notNull().unique(),
-  nickname: varchar('nickname', { length: 12 }).notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  role: userRole('role').notNull().default('user'),
-  status: userStatus('status').notNull().default('active'),
-  blockedReason: varchar('blocked_reason', { length: 200 }),
-  blockedUntil: timestamp('blocked_until', { withTimezone: true }),
-  blockedAt: timestamp('blocked_at', { withTimezone: true }),
-  nicknameChangedAt: timestamp('nickname_changed_at', { withTimezone: true }),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-  bio: varchar('bio', { length: 160 }).notNull().default(''),
-  avatarUploadId: integer('avatar_upload_id'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-export const sessions = pgTable(
-  'sessions',
-  {
-    tokenHash: varchar('token_hash', { length: 64 }).primaryKey(),
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [index('sessions_user_id_idx').on(t.userId)],
-);
-
-export const leagues = pgTable('leagues', {
-  id: serial('id').primaryKey(),
-  name: varchar('name', { length: 50 }).notNull().unique(),
-  sport: varchar('sport', { length: 20 }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-export const matches = pgTable(
-  'matches',
+/** 회원·관리자 */
+export const users = pgTable(
+  'nex_users',
   {
     id: serial('id').primaryKey(),
-    leagueId: integer('league_id')
-      .notNull()
-      .references(() => leagues.id, { onDelete: 'restrict' }),
-    homeTeam: varchar('home_team', { length: 50 }).notNull(),
-    awayTeam: varchar('away_team', { length: 50 }).notNull(),
-    kickoffAt: timestamp('kickoff_at', { withTimezone: true }).notNull(),
-    venue: varchar('venue', { length: 100 }),
-    status: matchStatus('status').notNull().default('scheduled'),
-    homeScore: integer('home_score'),
-    awayScore: integer('away_score'),
+    login: varchar('login', { length: 40 }).notNull(),
+    nick: varchar('nick', { length: 40 }).notNull(),
+    passwordHash: text('password_hash').notNull().default(''),
+    role: userRole('role').notNull().default('member'),
+    status: userStatus('status').notNull().default('active'),
+    blockReason: varchar('block_reason', { length: 200 }).notNull().default(''),
+    money: integer('money').notNull().default(0),
+    points: integer('points').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -108,605 +57,257 @@ export const matches = pgTable(
       .defaultNow(),
   },
   (t) => [
-    index('matches_kickoff_at_idx').on(t.kickoffAt),
-    index('matches_league_id_idx').on(t.leagueId),
+    uniqueIndex('nex_users_login_uidx').on(t.login),
+    index('nex_users_status_idx').on(t.status),
   ],
-);
+)
 
-export const posts = pgTable(
-  'posts',
+/** 입출금 신청 */
+export const cashRequests = pgTable(
+  'nex_cash_requests',
   {
     id: serial('id').primaryKey(),
-    category: postCategory('category').notNull().default('free'),
-    matchId: integer('match_id').references(() => matches.id, {
-      onDelete: 'set null',
-    }),
-    authorId: integer('author_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    tag: varchar('tag', { length: 20 }),
-    title: varchar('title', { length: 100 }).notNull(),
-    body: text('body').notNull(),
-    views: integer('views').notNull().default(0),
-    likeCount: integer('like_count').notNull().default(0),
-    bestExcluded: boolean('best_excluded').notNull().default(false),
-    status: contentStatus('status').notNull().default('visible'),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    index('posts_category_created_at_idx').on(t.category, t.createdAt),
-    index('posts_status_idx').on(t.status),
-    index('posts_match_id_idx').on(t.matchId),
-    index('posts_author_id_idx').on(t.authorId),
-    index('posts_like_count_idx').on(t.likeCount),
-  ],
-);
-
-export const comments = pgTable(
-  'comments',
-  {
-    id: serial('id').primaryKey(),
-    postId: integer('post_id')
-      .notNull()
-      .references(() => posts.id, { onDelete: 'cascade' }),
-    authorId: integer('author_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    parentId: integer('parent_id'),
-    body: varchar('body', { length: 500 }).notNull(),
-    status: contentStatus('status').notNull().default('visible'),
-    likeCount: integer('like_count').notNull().default(0),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    index('comments_post_id_idx').on(t.postId),
-    index('comments_parent_id_idx').on(t.parentId),
-    index('comments_author_id_idx').on(t.authorId),
-    index('comments_status_idx').on(t.status),
-    index('comments_like_count_idx').on(t.likeCount),
-  ],
-);
-
-export const commentLikes = pgTable(
-  'comment_likes',
-  {
-    commentId: integer('comment_id')
-      .notNull()
-      .references(() => comments.id, { onDelete: 'cascade' }),
+    publicId: varchar('public_id', { length: 32 }).notNull(),
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at', { withTimezone: true })
+    type: cashType('type').notNull(),
+    amount: integer('amount').notNull(),
+    status: cashStatus('status').notNull().default('대기'),
+    memo: varchar('memo', { length: 200 }).notNull().default(''),
+    requestedAt: timestamp('requested_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
   },
   (t) => [
-    primaryKey({ columns: [t.commentId, t.userId] }),
-    index('comment_likes_user_id_idx').on(t.userId),
+    uniqueIndex('nex_cash_public_id_uidx').on(t.publicId),
+    index('nex_cash_user_idx').on(t.userId),
+    index('nex_cash_status_idx').on(t.status),
   ],
-);
+)
 
-export const inquiries = pgTable(
-  'inquiries',
+/** 스포츠 배팅 */
+export const bets = pgTable(
+  'nex_bets',
   {
     id: serial('id').primaryKey(),
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    title: varchar('title', { length: 100 }).notNull(),
-    body: varchar('body', { length: 2000 }).notNull(),
-    status: inquiryStatus('status').notNull().default('waiting'),
-    answer: varchar('answer', { length: 2000 }),
-    answeredAt: timestamp('answered_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true })
+    matchName: varchar('match_name', { length: 200 }).notNull(),
+    league: varchar('league', { length: 120 }).notNull().default(''),
+    sport: varchar('sport', { length: 60 }).notNull().default(''),
+    market: varchar('market', { length: 80 }).notNull().default('승무패'),
+    line: varchar('line', { length: 40 }).notNull().default('-'),
+    whenLabel: varchar('when_label', { length: 20 }).notNull().default('일반'),
+    stake: integer('stake').notNull(),
+    odds: numeric('odds', { precision: 12, scale: 4 }).notNull(),
+    potentialPayout: integer('potential_payout').notNull(),
+    status: betStatus('status').notNull().default('진행 중'),
+    matchLive: boolean('match_live').notNull().default(false),
+    placedAt: timestamp('placed_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
   },
   (t) => [
-    index('inquiries_user_id_idx').on(t.userId),
-    index('inquiries_status_idx').on(t.status),
+    index('nex_bets_user_idx').on(t.userId),
+    index('nex_bets_status_idx').on(t.status),
+    index('nex_bets_match_idx').on(t.matchName),
   ],
-);
+)
 
-export const messageSends = pgTable('message_sends', {
-  id: serial('id').primaryKey(),
-  title: varchar('title', { length: 100 }).notNull(),
-  body: varchar('body', { length: 2000 }).notNull(),
-  toAll: boolean('to_all').notNull().default(false),
-  toUserId: integer('to_user_id').references(() => users.id, {
-    onDelete: 'set null',
-  }),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-export const messages = pgTable(
-  'messages',
-  {
-    id: serial('id').primaryKey(),
-    sendId: integer('send_id')
-      .notNull()
-      .references(() => messageSends.id, { onDelete: 'cascade' }),
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    readAt: timestamp('read_at', { withTimezone: true }),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [index('messages_user_id_idx').on(t.userId)],
-);
-
-export const settings = pgTable('settings', {
-  id: integer('id').primaryKey().default(1),
-  siteName: varchar('site_name', { length: 30 })
-    .notNull()
-    .default('스포츠 커뮤니티'),
-  noticeBanner: varchar('notice_banner', { length: 200 })
-    .notNull()
-    .default(''),
-  signupEnabled: boolean('signup_enabled').notNull().default(true),
-  postApprovalRequired: boolean('post_approval_required')
-    .notNull()
-    .default(false),
-  bestThreshold: integer('best_threshold').notNull().default(5),
-  reportHideThreshold: integer('report_hide_threshold').notNull().default(5),
-  postCooldownSec: integer('post_cooldown_sec').notNull().default(30),
-  commentCooldownSec: integer('comment_cooldown_sec').notNull().default(10),
-  freeTags: text('free_tags')
-    .array()
-    .notNull()
-    .default(sql`'{}'::text[]`),
-  matchTags: text('match_tags')
-    .array()
-    .notNull()
-    .default(sql`'{}'::text[]`),
-  humorTags: text('humor_tags')
-    .array()
-    .notNull()
-    .default(sql`'{}'::text[]`),
-  reviewTags: text('review_tags')
-    .array()
-    .notNull()
-    .default(sql`'{}'::text[]`),
-  newsTags: text('news_tags')
-    .array()
-    .notNull()
-    .default(sql`'{}'::text[]`),
-});
-
-export const postLikes = pgTable(
-  'post_likes',
-  {
-    postId: integer('post_id')
-      .notNull()
-      .references(() => posts.id, { onDelete: 'cascade' }),
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.postId, t.userId] }),
-    index('post_likes_user_id_idx').on(t.userId),
-  ],
-);
-
-export const bookmarks = pgTable(
-  'bookmarks',
-  {
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    postId: integer('post_id')
-      .notNull()
-      .references(() => posts.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.postId] }),
-    index('bookmarks_post_id_idx').on(t.postId),
-  ],
-);
-
-export const cheerSide = pgEnum('cheer_side', ['home', 'away']);
-
-export const predictionPick = pgEnum('prediction_pick', ['home', 'draw', 'away']);
-
-export const matchCheers = pgTable(
-  'match_cheers',
-  {
-    matchId: integer('match_id')
-      .notNull()
-      .references(() => matches.id, { onDelete: 'cascade' }),
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    side: cheerSide('side').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.matchId, t.userId] }),
-    index('match_cheers_user_id_idx').on(t.userId),
-  ],
-);
-
-export const matchPredictions = pgTable(
-  'match_predictions',
-  {
-    matchId: integer('match_id')
-      .notNull()
-      .references(() => matches.id, { onDelete: 'cascade' }),
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    pick: predictionPick('pick').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.matchId, t.userId] }),
-    index('match_predictions_user_id_idx').on(t.userId),
-  ],
-);
-
-export const notificationType = pgEnum('notification_type', [
-  'comment',
-  'reply',
-  'inquiry_answer',
-  'message',
-  'report_result',
-  'mention',
-  'subscribe',
-  'follow',
-]);
-
-export const notifications = pgTable(
-  'notifications',
+/** 카지노 배팅 */
+export const casinoBets = pgTable(
+  'nex_casino_bets',
   {
     id: serial('id').primaryKey(),
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    type: notificationType('type').notNull(),
-    text: varchar('text', { length: 200 }).notNull(),
-    link: varchar('link', { length: 200 }).notNull(),
-    readAt: timestamp('read_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true })
+    name: varchar('name', { length: 160 }).notNull(),
+    kind: casinoKind('kind').notNull().default('other'),
+    stake: integer('stake').notNull(),
+    payout: integer('payout').notNull().default(0),
+    status: betStatus('status').notNull().default('진행 중'),
+    placedAt: timestamp('placed_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-  },
-  (t) => [index('notifications_user_created_idx').on(t.userId, t.createdAt)],
-);
-
-export const reportTarget = pgEnum('report_target', ['post', 'comment', 'chat']);
-
-export const reportReason = pgEnum('report_reason', [
-  'abuse',
-  'obscene',
-  'spam',
-  'privacy',
-  'etc',
-]);
-
-export const reportStatus = pgEnum('report_status', [
-  'pending',
-  'resolved',
-  'rejected',
-]);
-
-export const reports = pgTable(
-  'reports',
-  {
-    id: serial('id').primaryKey(),
-    reporterId: integer('reporter_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    targetType: reportTarget('target_type').notNull(),
-    targetId: integer('target_id').notNull(),
-    reason: reportReason('reason').notNull(),
-    detail: varchar('detail', { length: 300 }).notNull().default(''),
-    status: reportStatus('status').notNull().default('pending'),
-    handledById: integer('handled_by_id').references(() => users.id, {
-      onDelete: 'set null',
-    }),
-    handledAt: timestamp('handled_at', { withTimezone: true }),
-    handleNote: varchar('handle_note', { length: 300 }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex('reports_reporter_target_uq').on(
-      t.reporterId,
-      t.targetType,
-      t.targetId,
-    ),
-    index('reports_target_idx').on(t.targetType, t.targetId),
-    index('reports_status_idx').on(t.status),
+    index('nex_casino_bets_user_idx').on(t.userId),
+    index('nex_casino_bets_kind_idx').on(t.kind),
+    index('nex_casino_bets_status_idx').on(t.status),
   ],
-);
+)
 
-export const forbiddenWords = pgTable('forbidden_words', {
-  id: serial('id').primaryKey(),
-  word: varchar('word', { length: 50 }).notNull().unique(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-export const adminLogs = pgTable(
-  'admin_logs',
-  {
-    id: serial('id').primaryKey(),
-    adminId: integer('admin_id').references(() => users.id, {
-      onDelete: 'set null',
-    }),
-    action: varchar('action', { length: 50 }).notNull(),
-    targetType: varchar('target_type', { length: 20 }).notNull(),
-    targetId: integer('target_id'),
-    detail: varchar('detail', { length: 300 }).notNull().default(''),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [index('admin_logs_created_at_idx').on(t.createdAt)],
-);
-
-export const uploadKind = pgEnum('upload_kind', ['post', 'avatar']);
-
-export const uploads = pgTable(
-  'uploads',
+/** 포인트 이동 */
+export const pointMoves = pgTable(
+  'nex_point_moves',
   {
     id: serial('id').primaryKey(),
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    kind: uploadKind('kind').notNull().default('post'),
-    postId: integer('post_id').references(() => posts.id, {
-      onDelete: 'set null',
-    }),
-    storedName: varchar('stored_name', { length: 200 }).notNull(),
-    originalName: varchar('original_name', { length: 200 }).notNull(),
-    mime: varchar('mime', { length: 50 }).notNull(),
-    size: integer('size').notNull(),
-    sortOrder: integer('sort_order').notNull().default(0),
+    amount: integer('amount').notNull(),
+    reason: varchar('reason', { length: 40 }).notNull().default('지급'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (t) => [
-    index('uploads_post_id_idx').on(t.postId),
-    index('uploads_user_id_idx').on(t.userId),
-  ],
-);
+  (t) => [index('nex_point_moves_user_idx').on(t.userId)],
+)
 
-export const teams = pgTable(
-  'teams',
+/** 총판 */
+export const distAgents = pgTable(
+  'nex_dist_agents',
   {
     id: serial('id').primaryKey(),
-    name: varchar('name', { length: 50 }).notNull().unique(),
-    sport: varchar('sport', { length: 20 }).notNull(),
-    leagueId: integer('league_id').references(() => leagues.id, {
-      onDelete: 'set null',
-    }),
+    code: varchar('code', { length: 40 }).notNull(),
+    login: varchar('login', { length: 40 }).notNull(),
+    nick: varchar('nick', { length: 40 }).notNull(),
+    lineName: varchar('line_name', { length: 80 }).notNull().default(''),
+    balance: integer('balance').notNull().default(0),
+    unpaid: integer('unpaid').notNull().default(0),
     active: boolean('active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (t) => [index('teams_sport_idx').on(t.sport)],
-);
-
-export const userTeams = pgTable(
-  'user_teams',
-  {
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    teamId: integer('team_id')
-      .notNull()
-      .references(() => teams.id, { onDelete: 'cascade' }),
-    isPrimary: boolean('is_primary').notNull().default(false),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
   (t) => [
-    primaryKey({ columns: [t.userId, t.teamId] }),
-    index('user_teams_team_id_idx').on(t.teamId),
+    uniqueIndex('nex_dist_agents_code_uidx').on(t.code),
+    uniqueIndex('nex_dist_agents_login_uidx').on(t.login),
   ],
-);
+)
 
-export const matchMessages = pgTable(
-  'match_messages',
+/** 총판 지급내역 */
+export const distPayouts = pgTable(
+  'nex_dist_payouts',
   {
     id: serial('id').primaryKey(),
-    matchId: integer('match_id')
+    agentId: integer('agent_id')
       .notNull()
-      .references(() => matches.id, { onDelete: 'cascade' }),
+      .references(() => distAgents.id, { onDelete: 'cascade' }),
+    amount: integer('amount').notNull(),
+    memo: varchar('memo', { length: 200 }).notNull().default(''),
+    paidAt: timestamp('paid_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('nex_dist_payouts_agent_idx').on(t.agentId)],
+)
+
+/** 수당 적립 상세 */
+export const distAccruals = pgTable(
+  'nex_dist_accruals',
+  {
+    id: serial('id').primaryKey(),
+    agentId: integer('agent_id')
+      .notNull()
+      .references(() => distAgents.id, { onDelete: 'cascade' }),
+    source: varchar('source', { length: 80 }).notNull().default('스포츠'),
+    amount: integer('amount').notNull(),
+    balanceAfter: integer('balance_after').notNull().default(0),
+    memo: varchar('memo', { length: 200 }).notNull().default(''),
+    accruedAt: timestamp('accrued_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('nex_dist_accruals_agent_idx').on(t.agentId)],
+)
+
+/** 정산 전 검수(수상 배팅) */
+export const reviewFlags = pgTable(
+  'nex_review_flags',
+  {
+    id: serial('id').primaryKey(),
+    betId: integer('bet_id').references(() => bets.id, { onDelete: 'set null' }),
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    body: varchar('body', { length: 500 }).notNull(),
-    status: contentStatus('status').notNull().default('visible'),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    recommendation: reviewRec('recommendation').notNull().default('none'),
+    flagged: boolean('flagged').notNull().default(true),
+    ambiguous: boolean('ambiguous').notNull().default(false),
+    backlog: boolean('backlog').notNull().default(false),
+    matchName: varchar('match_name', { length: 200 }).notNull(),
+    market: varchar('market', { length: 80 }).notNull().default(''),
+    selection: varchar('selection', { length: 80 }).notNull().default(''),
+    stake: integer('stake').notNull(),
+    potentialPayout: integer('potential_payout').notNull(),
+    betStatus: betStatus('bet_status').notNull().default('진행 중'),
+    placedAt: timestamp('placed_at', { withTimezone: true }).notNull(),
+    eventAt: timestamp('event_at', { withTimezone: true }),
+    marginSec: numeric('margin_sec', { precision: 8, scale: 1 }),
+    slackSec: numeric('slack_sec', { precision: 8, scale: 1 }),
+    feedAt: timestamp('feed_at', { withTimezone: true }),
+    snapshot: varchar('snapshot', { length: 40 }).notNull().default('-'),
+    horizonOk: boolean('horizon_ok'),
+    badges: text('badges').notNull().default(''),
+    reasons: text('reasons').notNull().default(''),
+    recent30: integer('recent_30').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [
-    index('match_messages_match_id_id_idx').on(t.matchId, t.id),
-    index('match_messages_user_id_idx').on(t.userId),
+    index('nex_review_flags_user_idx').on(t.userId),
+    index('nex_review_flags_flagged_idx').on(t.flagged),
   ],
-);
+)
 
-export const postTeams = pgTable(
-  'post_teams',
-  {
-    postId: integer('post_id')
-      .notNull()
-      .references(() => posts.id, { onDelete: 'cascade' }),
-    teamId: integer('team_id')
-      .notNull()
-      .references(() => teams.id, { onDelete: 'cascade' }),
-  },
-  (t) => [
-    primaryKey({ columns: [t.postId, t.teamId] }),
-    index('post_teams_team_id_idx').on(t.teamId),
-  ],
-);
+/** USDT 지갑 설정(단일 행 운용) */
+export const walletSettings = pgTable('nex_wallet_settings', {
+  id: serial('id').primaryKey(),
+  network: varchar('network', { length: 40 }).notNull().default('TRC-20'),
+  address: varchar('address', { length: 200 }).notNull().default(''),
+  rate: varchar('rate', { length: 40 }).notNull().default('1450'),
+  minAmount: varchar('min_amount', { length: 40 }).notNull().default('10'),
+  note: varchar('note', { length: 200 }).notNull().default(''),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+})
 
-export const userFollows = pgTable(
-  'user_follows',
-  {
-    followerId: integer('follower_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    followeeId: integer('followee_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.followerId, t.followeeId] }),
-    index('user_follows_followee_idx').on(t.followeeId),
-  ],
-);
-
-export const userMutes = pgTable(
-  'user_mutes',
-  {
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    mutedUserId: integer('muted_user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.mutedUserId] }),
-    index('user_mutes_muted_idx').on(t.mutedUserId),
-  ],
-);
-
-export const postSubscriptions = pgTable(
-  'post_subscriptions',
-  {
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    postId: integer('post_id')
-      .notNull()
-      .references(() => posts.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.postId] }),
-    index('post_subscriptions_post_idx').on(t.postId),
-  ],
-);
-
-export const notificationSettings = pgTable('notification_settings', {
-  userId: integer('user_id')
-    .primaryKey()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  comment: boolean('comment').notNull().default(true),
-  reply: boolean('reply').notNull().default(true),
-  mention: boolean('mention').notNull().default(true),
-  subscribe: boolean('subscribe').notNull().default(true),
-  follow: boolean('follow').notNull().default(true),
-  inquiryAnswer: boolean('inquiry_answer').notNull().default(true),
-  message: boolean('message').notNull().default(true),
-  reportResult: boolean('report_result').notNull().default(true),
-});
-
-export const postPolls = pgTable('post_polls', {
-  postId: integer('post_id')
-    .primaryKey()
-    .references(() => posts.id, { onDelete: 'cascade' }),
-  closesAt: timestamp('closes_at', { withTimezone: true }).notNull(),
+/** 배너 */
+export const banners = pgTable('nex_banners', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 120 }).notNull(),
+  visible: boolean('visible').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+})
 
-export const postPollOptions = pgTable(
-  'post_poll_options',
+/** 1:1 문의 */
+export const inquiries = pgTable('nex_inquiries', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+  title: varchar('title', { length: 160 }).notNull(),
+  body: text('body').notNull().default(''),
+  answer: text('answer').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+})
+
+/** 활동 로그 */
+export const activityLogs = pgTable(
+  'nex_activity_logs',
   {
     id: serial('id').primaryKey(),
-    postId: integer('post_id')
-      .notNull()
-      .references(() => postPolls.postId, { onDelete: 'cascade' }),
-    label: varchar('label', { length: 40 }).notNull(),
-    sortOrder: integer('sort_order').notNull(),
-  },
-  (t) => [index('post_poll_options_post_idx').on(t.postId, t.sortOrder)],
-);
-
-export const postPollVotes = pgTable(
-  'post_poll_votes',
-  {
-    postId: integer('post_id')
-      .notNull()
-      .references(() => postPolls.postId, { onDelete: 'cascade' }),
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    optionId: integer('option_id')
-      .notNull()
-      .references(() => postPollOptions.id, { onDelete: 'cascade' }),
+    text: varchar('text', { length: 400 }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
   },
-  (t) => [
-    primaryKey({ columns: [t.postId, t.userId] }),
-    index('post_poll_votes_option_idx').on(t.optionId),
-  ],
-);
+  (t) => [index('nex_activity_logs_created_idx').on(t.createdAt)],
+)
 
-export const userBadges = pgTable(
-  'user_badges',
-  {
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    badgeId: varchar('badge_id', { length: 30 }).notNull(),
-    awardedAt: timestamp('awarded_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.userId, t.badgeId] })],
-);
+/** 키-값 설정 */
+export const settings = pgTable('nex_settings', {
+  key: varchar('key', { length: 80 }).primaryKey(),
+  value: text('value').notNull().default('{}'),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+})

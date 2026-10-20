@@ -111,12 +111,12 @@ coverage
 
 ## 6. 환경 변수
 
-루트 `docker-compose.yml`의 `postgres` 서비스는 `postgres:17`, 사용자 `app`, 비밀번호 `app`, 데이터베이스 `app`, 포트 `5432`, `pg_isready` healthcheck를 사용한다.
+루트 `docker-compose.yml`의 `postgres` 서비스는 `postgres:17`, 사용자 `nex`, 비밀번호 `nex`, 데이터베이스 `nex`, 포트 `5432`, `pg_isready` healthcheck를 사용한다.
 
 `apps/api/.env.example`:
 
 ```
-DATABASE_URL=postgresql://app:app@localhost:5432/app
+DATABASE_URL=postgresql://nex:nex@localhost:5432/nex
 PORT=3000
 WEB_ORIGIN=http://localhost:5173
 ```

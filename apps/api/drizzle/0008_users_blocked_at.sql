@@ -1,1 +1,0 @@
-ALTER TABLE "users" ADD COLUMN "blocked_at" timestamp with time zone;
