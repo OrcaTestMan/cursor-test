@@ -2544,68 +2544,112 @@ function makeRiskFilterTrigger(label, dim) {
 
 function closeRiskFilterCard(board) {
   board.querySelector('[data-risk-card]')?.remove()
+  document.querySelector('[data-risk-card-layer]')?.remove()
   board.dataset.riskOpenDim = ''
+}
+
+function riskPickClass(on) {
+  return on
+    ? 'rounded-lg border border-accent bg-accent-soft px-3 py-2.5 text-left font-bold text-accent'
+    : 'rounded-lg border border-edge bg-card px-3 py-2.5 text-left font-bold text-dim hover:text-fg hover:bg-card-hover'
+}
+
+function paintRiskPickButton(item, value, count, on) {
+  item.className = riskPickClass(on)
+  item.style.minHeight = '52px'
+  item.replaceChildren()
+  const name = document.createElement('span')
+  name.style.cssText = 'display:block;font-size:12px;line-height:1.3;white-space:normal;word-break:keep-all'
+  name.textContent = value
+  const num = document.createElement('span')
+  num.style.cssText = 'display:block;margin-top:4px;font-size:11px;font-weight:900;font-variant-numeric:tabular-nums;opacity:.75'
+  num.textContent = `${count}건`
+  item.append(name, num)
 }
 
 function openRiskFilterCard(board, dim, lines) {
   const meta = RISK_DIM_META[dim]
-  const row = board.querySelector(`[data-risk-filter-row="${dim}"]`)
-  if (!meta || !row) return
+  const trigger = board.querySelector(`button[data-risk-open="${dim}"]`)
+  if (!meta || !trigger) return
   closeRiskFilterCard(board)
   board.dataset.riskOpenDim = dim
-  // dataset keys: riskSport / riskMarket / riskWhen
   const dataKey = dim === 'sport' ? 'riskSport' : dim === 'market' ? 'riskMarket' : 'riskWhen'
   const picks = new Set(riskParsePicks(board.dataset[dataKey]))
+  const rect = trigger.getBoundingClientRect()
+  const width = dim === 'market' ? Math.min(640, window.innerWidth - 24) : Math.min(420, window.innerWidth - 24)
+  let left = rect.left + rect.width / 2 - width / 2
+  left = Math.max(12, Math.min(left, window.innerWidth - width - 12))
+  const top = Math.min(rect.bottom + 8, window.innerHeight - 80)
+
+  const layer = document.createElement('div')
+  layer.dataset.riskCardLayer = '1'
+  layer.style.cssText = 'position:fixed;inset:0;z-index:80'
 
   const card = document.createElement('div')
   card.dataset.riskCard = dim
-  card.className = 'absolute left-1/2 top-full z-30 mt-2 w-[min(560px,92vw)] -translate-x-1/2 rounded-xl border border-edge bg-panel p-3 shadow-card'
+  card.style.cssText = [
+    'position:fixed',
+    `top:${top}px`,
+    `left:${left}px`,
+    `width:${width}px`,
+    'max-height:min(420px,70vh)',
+    'overflow:auto',
+    'z-index:81',
+    'border-radius:12px',
+    'border:1px solid #2e343a',
+    'background:#191c1f',
+    'padding:12px',
+    'box-shadow:0 12px 40px rgba(0,0,0,.45)',
+  ].join(';')
+
   const title = document.createElement('div')
-  title.className = 'mb-2 flex items-center justify-between gap-2'
+  title.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px'
   const heading = document.createElement('strong')
-  heading.className = 'text-[13px] font-black text-fg'
+  heading.style.cssText = 'font-size:13px;font-weight:900;color:#f2f4f6'
   heading.textContent = `${meta.label} 선택`
   const clear = document.createElement('button')
   clear.type = 'button'
   clear.dataset.riskCardAll = '1'
-  clear.className = 'text-[11px] font-bold text-dim hover:text-accent'
-  clear.textContent = '전체'
+  clear.style.cssText = 'font-size:11px;font-weight:700;color:#9aa3ad;background:none;border:0;cursor:pointer'
+  clear.textContent = '전체 해제'
   title.append(heading, clear)
 
   const grid = document.createElement('div')
-  grid.className = dim === 'market'
-    ? 'grid max-h-[320px] grid-cols-2 gap-1.5 overflow-y-auto sm:grid-cols-3'
-    : 'grid grid-cols-2 gap-1.5 sm:grid-cols-3'
+  const cols = dim === 'when' ? 2 : dim === 'sport' ? 3 : 3
+  grid.style.cssText = `display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:8px`
   meta.values.forEach((value) => {
     const on = picks.has(value)
     const n = countRiskDim(lines, meta.key, value)
     const item = document.createElement('button')
     item.type = 'button'
     item.dataset.riskCardPick = value
-    item.className = on
-      ? 'rounded-lg border border-accent bg-accent-soft px-2.5 py-2 text-left text-[12px] font-bold text-accent'
-      : 'rounded-lg border border-edge bg-card px-2.5 py-2 text-left text-[12px] font-bold text-dim hover:text-fg hover:bg-card-hover'
-    item.innerHTML = `<span class="block truncate">${value}</span><span class="mt-0.5 block text-[11px] font-black tabular-nums opacity-80">${n}</span>`
+    paintRiskPickButton(item, value, n, on)
     grid.append(item)
   })
 
   const actions = document.createElement('div')
-  actions.className = 'mt-3 flex justify-end gap-2'
+  actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:12px;position:sticky;bottom:0;padding-top:8px;background:#191c1f'
   const cancel = document.createElement('button')
   cancel.type = 'button'
   cancel.dataset.riskCardClose = '1'
-  cancel.className = 'h-8 rounded-lg border border-edge px-3 text-[12px] font-bold text-dim'
+  cancel.style.cssText = 'height:32px;border-radius:8px;border:1px solid #2e343a;padding:0 12px;font-size:12px;font-weight:700;color:#9aa3ad;background:transparent;cursor:pointer'
   cancel.textContent = '닫기'
   const apply = document.createElement('button')
   apply.type = 'button'
   apply.dataset.riskCardApply = '1'
-  apply.className = 'h-8 rounded-lg bg-accent px-3 text-[12px] font-bold text-on-accent'
+  apply.style.cssText = 'height:32px;border-radius:8px;border:0;padding:0 12px;font-size:12px;font-weight:700;color:#07251a;background:#22e07a;cursor:pointer'
   apply.textContent = '적용'
   actions.append(cancel, apply)
   card.append(title, grid, actions)
-  row.append(card)
+  layer.append(card)
+  document.body.append(layer)
 
-  card.addEventListener('click', (event) => {
+  const onLayer = (event) => {
+    if (event.target === layer) {
+      closeRiskFilterCard(board)
+      return
+    }
+    if (!event.target.closest('[data-risk-card]')) return
     event.stopPropagation()
     if (event.target.closest('[data-risk-card-close]')) {
       closeRiskFilterCard(board)
@@ -2614,7 +2658,7 @@ function openRiskFilterCard(board, dim, lines) {
     if (event.target.closest('[data-risk-card-all]')) {
       picks.clear()
       grid.querySelectorAll('[data-risk-card-pick]').forEach((node) => {
-        node.className = 'rounded-lg border border-edge bg-card px-2.5 py-2 text-left text-[12px] font-bold text-dim hover:text-fg hover:bg-card-hover'
+        paintRiskPickButton(node, node.dataset.riskCardPick, countRiskDim(lines, meta.key, node.dataset.riskCardPick), false)
       })
       return
     }
@@ -2623,10 +2667,7 @@ function openRiskFilterCard(board, dim, lines) {
       const value = pickBtn.dataset.riskCardPick
       if (picks.has(value)) picks.delete(value)
       else picks.add(value)
-      const on = picks.has(value)
-      pickBtn.className = on
-        ? 'rounded-lg border border-accent bg-accent-soft px-2.5 py-2 text-left text-[12px] font-bold text-accent'
-        : 'rounded-lg border border-edge bg-card px-2.5 py-2 text-left text-[12px] font-bold text-dim hover:text-fg hover:bg-card-hover'
+      paintRiskPickButton(pickBtn, value, countRiskDim(lines, meta.key, value), picks.has(value))
       return
     }
     if (event.target.closest('[data-risk-card-apply]')) {
@@ -2634,7 +2675,8 @@ function openRiskFilterCard(board, dim, lines) {
       closeRiskFilterCard(board)
       paintRiskMonitor()
     }
-  })
+  }
+  layer.addEventListener('click', onLayer)
 }
 
 function buildRiskWatchBoard() {
