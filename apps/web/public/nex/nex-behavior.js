@@ -181,6 +181,7 @@ function store() {
   data.slip ||= []
   data.casinoVisits ||= []
   data.casinoBets ||= []
+  data.reviewFlags ||= []
   data.distSettles ||= []
   if (data.distBalance == null && !Array.isArray(data.distSettles)) data.distBalance = 48200
   data.boardPosts ||= [
@@ -332,6 +333,11 @@ function store() {
       })
     }
     data.casinoKindSeed = 1
+    migrated = true
+  }
+  if (data.reviewSeedApplied !== 1 || !(data.reviewFlags || []).length) {
+    data.reviewFlags = buildReviewDemoFlags()
+    data.reviewSeedApplied = 1
     migrated = true
   }
   deriveUsers(data)
@@ -1634,6 +1640,7 @@ function paintLinked() {
   paintBetMarkets()
   paintCurrentHot(data)
   paintRiskMonitor(data)
+  paintSettleReview(data)
   paintCashDetail()
   paintSettleLedger()
   paintSettleSamples()
@@ -2648,6 +2655,269 @@ function paintRiskMonitor(data = store()) {
   paintRiskMembers(data, rows)
   const refreshed = [...document.querySelectorAll('main span')].find((node) => /^갱신\s/.test(node.textContent.trim()))
   if (refreshed) refreshed.textContent = `갱신 ${stamp()}`
+}
+
+const REVIEW_REC = {
+  void_review: { label: '무효 검토', cls: 'bg-danger-soft text-danger' },
+  weak_evidence: { label: '근거 약함 - 지급 권고', cls: 'bg-gold-soft text-gold' },
+  ambiguous: { label: '판단 불가 - 지급 권고', cls: 'bg-card-hover text-dim' },
+  not_won: { label: '돈 안 나감', cls: 'bg-input text-muted' },
+  none: { label: '해당 없음', cls: 'bg-input text-muted' },
+}
+
+function reviewStamp(ms = Date.now()) {
+  const now = new Date(ms)
+  return `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+}
+
+function reviewSecText(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '-'
+  const n = Math.floor(Number(value) * 10) / 10
+  return `${Number.isInteger(n) ? n : n.toFixed(1)}초`
+}
+
+function buildReviewDemoFlags() {
+  const now = Date.now()
+  return [
+    {
+      recommendation: 'void_review',
+      flagged: true,
+      login: 'test',
+      nick: '테스트유저 (t)',
+      match: '밀워키 브루어스 vs 시카고 컵스',
+      market: '핸디캡',
+      selection: '-1.5',
+      stake: 10000,
+      potential: 92943,
+      betStatus: '진행 중',
+      placedAt: reviewStamp(now - 95_000),
+      eventAt: reviewStamp(now - 106_000),
+      marginSec: 3,
+      slackSec: 8,
+      feedAt: reviewStamp(now - 100_000),
+      snapshot: '4-3',
+      horizonAt: reviewStamp(now - 80_000),
+      horizonOk: true,
+      badges: ['수상'],
+      recent30: 3,
+      reasons: ['post:접수가 사건+마진(3초) 이후 +8.0초', 'A2:접수 전 유리 사건 없음(지평선 통과)'],
+      ambiguous: false,
+      backlog: false,
+    },
+    {
+      recommendation: 'weak_evidence',
+      flagged: true,
+      login: 'test123',
+      nick: '테스트용 (t)',
+      match: '맨체스터 시티 vs 아스널 (t)',
+      market: '핸디캡',
+      selection: '-0.5',
+      stake: 15000,
+      potential: 32250,
+      betStatus: '진행 중',
+      placedAt: reviewStamp(now - 70_000),
+      eventAt: reviewStamp(now - 75_500),
+      marginSec: 3,
+      slackSec: 2.5,
+      feedAt: reviewStamp(now - 72_000),
+      snapshot: '1-1',
+      horizonAt: reviewStamp(now - 61_000),
+      horizonOk: true,
+      badges: ['수상', '근거 약함'],
+      recent30: 1,
+      reasons: ['post:접수가 사건+마진(3초) 이후 +2.5초', 'A2:마진 여유 5초 미만'],
+      ambiguous: false,
+      backlog: false,
+    },
+    {
+      recommendation: 'ambiguous',
+      flagged: true,
+      login: 'user03',
+      nick: '회원03 (t)',
+      match: '디트로이트 타이거스 vs 미네소타 트윈스',
+      market: '언더오버',
+      selection: '8.5',
+      stake: 7000,
+      potential: 17150,
+      betStatus: '적중',
+      placedAt: reviewStamp(now - 3600_000),
+      eventAt: reviewStamp(now - 3610_000),
+      marginSec: 3,
+      slackSec: 6,
+      feedAt: reviewStamp(now - 3605_000),
+      snapshot: '5-4',
+      horizonAt: reviewStamp(now - 3580_000),
+      horizonOk: true,
+      badges: ['판독', '정정'],
+      recent30: 2,
+      reasons: ['post:같은 사건의 시각 정정 이력 1회 - 자동 무효 제외', 'post:공식 기록 판독(리뷰) 표식 - 자동 무효 제외'],
+      ambiguous: true,
+      backlog: false,
+    },
+    {
+      recommendation: 'void_review',
+      flagged: true,
+      login: 'user05',
+      nick: '회원05 (t)',
+      match: '토트넘 vs 첼시 (t)',
+      market: '승무패',
+      selection: '무',
+      stake: 9000,
+      potential: 28800,
+      betStatus: '적중',
+      placedAt: reviewStamp(now - 7200_000),
+      eventAt: reviewStamp(now - 7215_000),
+      marginSec: 3,
+      slackSec: 12,
+      feedAt: reviewStamp(now - 7208_000),
+      snapshot: '0-0',
+      horizonAt: reviewStamp(now - 7180_000),
+      horizonOk: true,
+      badges: ['수상', '적중'],
+      recent30: 4,
+      reasons: ['post:접수가 사건+마진(3초) 이후 +12.0초', 'post:사후:득점 후 접수 근거 단단'],
+      ambiguous: false,
+      backlog: false,
+    },
+    {
+      recommendation: 'not_won',
+      flagged: true,
+      login: 'test',
+      nick: '테스트유저 (t)',
+      match: '시드니 올림픽 vs 시드니 유나이티드 58',
+      market: '언더오버',
+      selection: '2.5',
+      stake: 10000,
+      potential: 100879,
+      betStatus: '미적중',
+      placedAt: reviewStamp(now - 86000_000),
+      eventAt: reviewStamp(now - 86010_000),
+      marginSec: 3,
+      slackSec: 7,
+      feedAt: reviewStamp(now - 86005_000),
+      snapshot: '1-0',
+      horizonAt: reviewStamp(now - 85990_000),
+      horizonOk: false,
+      badges: ['수상'],
+      recent30: 3,
+      reasons: ['post:미적중·무효·취소이거나 접수 재검증에서 이미 무효 처리', 'A2:지평선이 접수+예산 미달'],
+      ambiguous: false,
+      backlog: false,
+    },
+    {
+      recommendation: 'ambiguous',
+      flagged: true,
+      login: 'user03',
+      nick: '회원03 (t)',
+      match: '보스턴 셀틱스 vs 뉴욕 닉스 (t)',
+      market: '언더오버',
+      selection: '215.5',
+      stake: 12000,
+      potential: 22800,
+      betStatus: '진행 중',
+      placedAt: reviewStamp(now - 40_000),
+      eventAt: reviewStamp(now - 48_000),
+      marginSec: 3,
+      slackSec: 5,
+      feedAt: reviewStamp(now - 43_000),
+      snapshot: '98-97',
+      horizonAt: reviewStamp(now - 20_000),
+      horizonOk: false,
+      badges: ['재판정 대기'],
+      recent30: 1,
+      reasons: ['post:지평선이 접수+예산 미달', 'A2:사건 시계 없음(소스 미매칭·미지원)'],
+      ambiguous: true,
+      backlog: true,
+    },
+  ]
+}
+
+function reviewRecBadge(key) {
+  const info = REVIEW_REC[key] || REVIEW_REC.none
+  const span = document.createElement('span')
+  span.className = `inline-flex shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-black ${info.cls}`
+  span.textContent = info.label
+  return span
+}
+
+function paintSettleReview(data = store()) {
+  if (!location.pathname.endsWith('/review.html')) return
+  if (!(data.reviewFlags || []).length) {
+    data.reviewFlags = buildReviewDemoFlags()
+    data.reviewSeedApplied = 1
+    saveStore(data)
+  }
+  const rows = data.reviewFlags || []
+  const chip = [...document.querySelectorAll('main button')].find((button) => {
+    const label = labelOf(button)
+    return (label === '수상만' || label === '전부') && button.className.includes('bg-accent')
+  })
+  const flaggedOnly = !chip || labelOf(chip) === '수상만'
+  const shown = flaggedOnly ? rows.filter((row) => row.flagged) : rows
+  const wonFlagged = rows.filter((row) => row.flagged && row.betStatus === '적중').length
+  const ambiguous = rows.filter((row) => row.ambiguous || row.recommendation === 'ambiguous').length
+  const backlog = rows.filter((row) => row.backlog).length
+  setLabel('수상', countText(rows.filter((row) => row.flagged).length, '건'))
+  setLabel('그중 적중(돈 나감)', countText(wonFlagged, '건'))
+  setLabel('판단 불가', countText(ambiguous, '건'))
+  setLabel('재판정 대기', countText(backlog, '건'))
+  setLabel('공식 기록 수신', '정상 · 마지막 수신 3초 전')
+  setLabel('자동 판정', '정상')
+  const table = [...document.querySelectorAll('main table')].find((item) => (item.tHead?.innerText || '').includes('권고') && (item.tHead?.innerText || '').includes('마진 여유'))
+  const body = table?.tBodies[0]
+  if (!body) return
+  if (!shown.length) {
+    const empty = document.createElement('tr')
+    const cell = document.createElement('td')
+    cell.colSpan = 19
+    cell.className = 'px-3 py-12 text-center text-sm text-muted'
+    cell.textContent = flaggedOnly ? '최근 14일 동안 수상한 베팅이 없습니다.' : '최근 14일 동안 판정 기록이 없습니다.'
+    empty.append(cell)
+    body.replaceChildren(empty)
+    return
+  }
+  body.replaceChildren(...shown.map((row) => {
+    const tr = document.createElement('tr')
+    tr.className = `border-b border-edge-soft hover:bg-card-hover/40 transition-colors${row.recommendation === 'not_won' ? ' opacity-75' : ''}`
+    const values = [
+      '',
+      reviewRecBadge(row.recommendation),
+      memberLabel(row.nick, row.login),
+      testTag(row.match),
+      testTag(row.market),
+      testTag(row.selection),
+      Number(row.stake).toLocaleString('ko-KR'),
+      Number(row.potential).toLocaleString('ko-KR'),
+      row.betStatus,
+      row.placedAt,
+      row.eventAt,
+      reviewSecText(row.marginSec),
+      reviewSecText(row.slackSec),
+      row.feedAt,
+      row.snapshot || '-',
+      row.horizonOk ? '통과' : '미달',
+      (row.badges || []).join(' · ') || '-',
+      `${Number(row.recent30 || 0)}건`,
+      (row.reasons || []).slice(0, 2).join(' · '),
+    ]
+    values.forEach((value, index) => {
+      const cell = document.createElement('td')
+      cell.className = 'px-3 py-2.5 align-middle whitespace-nowrap text-center text-[13px]'
+      if (index === 0) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'text-muted hover:text-fg text-xs font-bold'
+        button.textContent = '›'
+        cell.append(button)
+      } else if (value instanceof Node) cell.append(value)
+      else cell.textContent = value
+      if (index === 6 || index === 7 || index === 11 || index === 12) cell.classList.add('tabular-nums')
+      tr.append(cell)
+    })
+    return tr
+  }))
+  const refreshed = [...document.querySelectorAll('main span')].find((node) => /자동 갱신|갱신/.test(node.textContent || ''))
+  if (refreshed && /자동 갱신/.test(refreshed.textContent)) refreshed.textContent = `갱신 ${stamp()} · 60초마다 자동 갱신`
 }
 
 function paintCurrentHot(data) {
@@ -3894,7 +4164,7 @@ function init() {
       if (siblings.length < 2) return
       const label = labelOf(button)
       if (['저장', '기본값으로', '등급없음', '실버', '골드', 'VIP', '새로고침', '라이브 카지노', '슬롯게임', '미니게임', '문의하기', '등록', '신청', '추가', '대조 실행'].includes(label)) return
-      if (!/^(전체|전부|오늘|금일|금월|전월|\d+일|베팅|적중|환불|입금|출금|조정|대기|승인|거절|지급 실패|계좌|USDT|AXpay|전체 유형|종류 전체|진행 중|미적중|정상|차단|답변|공지|이벤트|자유|로비|예정|라이브|종료|노출|숨김|미열람|열람|지급|회수)$/.test(label)) return
+      if (!/^(전체|전부|수상만|오늘|금일|금월|전월|\d+일|베팅|적중|환불|입금|출금|조정|대기|승인|거절|지급 실패|계좌|USDT|AXpay|전체 유형|종류 전체|진행 중|미적중|정상|차단|답변|공지|이벤트|자유|로비|예정|라이브|종료|노출|숨김|미열람|열람|지급|회수)$/.test(label)) return
       const onClass = siblings.find((node) => node.className.includes('bg-accent'))?.className
         || 'px-3 py-1.5 rounded-md text-xs font-bold whitespace-nowrap transition-colors bg-accent-soft text-accent'
       const offClass = siblings.find((node) => !node.className.includes('bg-accent'))?.className
