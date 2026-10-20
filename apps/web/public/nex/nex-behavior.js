@@ -2550,21 +2550,21 @@ function closeRiskFilterCard(board) {
 
 function riskPickClass(on) {
   return on
-    ? 'rounded-lg border border-accent bg-accent-soft px-3 py-2.5 text-left font-bold text-accent'
-    : 'rounded-lg border border-edge bg-card px-3 py-2.5 text-left font-bold text-dim hover:text-fg hover:bg-card-hover'
+    ? 'rounded-lg border border-accent bg-accent-soft px-3 py-2.5 text-center font-bold text-accent'
+    : 'rounded-lg border border-edge bg-card px-3 py-2.5 text-center font-bold text-dim hover:text-fg hover:bg-card-hover'
 }
 
 function paintRiskPickButton(item, value, stats, on) {
   const count = Number(stats?.count || 0)
   const stake = Number(stats?.stake || 0)
   item.className = riskPickClass(on)
-  item.style.minHeight = '58px'
+  item.style.cssText = `${item.style.cssText || ''};min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center`
   item.replaceChildren()
   const name = document.createElement('span')
-  name.style.cssText = 'display:block;font-size:12px;line-height:1.3;white-space:normal;word-break:keep-all'
+  name.style.cssText = 'display:block;width:100%;font-size:12px;line-height:1.3;white-space:normal;word-break:keep-all;text-align:center'
   name.textContent = value
   const meta = document.createElement('span')
-  meta.style.cssText = 'display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:11px;font-weight:900;font-variant-numeric:tabular-nums;opacity:.8'
+  meta.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px;font-size:11px;font-weight:900;font-variant-numeric:tabular-nums;opacity:.8;text-align:center'
   const countEl = document.createElement('span')
   countEl.textContent = `${count}건`
   const stakeEl = document.createElement('span')
