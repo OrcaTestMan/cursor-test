@@ -1,4 +1,5 @@
-import {
+﻿import {
+  bigint,
   boolean,
   index,
   integer,
@@ -36,7 +37,7 @@ export const reviewRec = pgEnum('nex_review_rec', [
   'none',
 ])
 
-/** 회원·관리자 */
+/** 회원·관리자 — money는 캐시 잔액(원장과 동일 TX로 갱신) */
 export const users = pgTable(
   'nex_users',
   {
@@ -47,8 +48,8 @@ export const users = pgTable(
     role: userRole('role').notNull().default('member'),
     status: userStatus('status').notNull().default('active'),
     blockReason: varchar('block_reason', { length: 200 }).notNull().default(''),
-    money: integer('money').notNull().default(0),
-    points: integer('points').notNull().default(0),
+    money: bigint('money', { mode: 'number' }).notNull().default(0),
+    points: bigint('points', { mode: 'number' }).notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -62,16 +63,16 @@ export const users = pgTable(
   ],
 )
 
-/** 머니 원장(잔액 변동 이력) */
+/** 머니 원장 — append-only. 이중기록은 (ref_type, ref_id) 유니크로 차단 */
 export const moneyMoves = pgTable(
   'nex_money_moves',
   {
-    id: serial('id').primaryKey(),
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    amount: integer('amount').notNull(),
-    balanceAfter: integer('balance_after').notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    balanceAfter: bigint('balance_after', { mode: 'number' }).notNull(),
     reason: varchar('reason', { length: 40 }).notNull(),
     refType: varchar('ref_type', { length: 40 }).notNull().default(''),
     refId: integer('ref_id'),
@@ -83,6 +84,27 @@ export const moneyMoves = pgTable(
   (t) => [
     index('nex_money_moves_user_idx').on(t.userId),
     index('nex_money_moves_created_idx').on(t.createdAt),
+    index('nex_money_moves_user_created_id_idx').on(t.userId, t.createdAt, t.id),
+    uniqueIndex('nex_money_moves_ref_uidx').on(t.refType, t.refId),
+  ],
+)
+
+/** 멱등키 */
+export const idempotencyKeys = pgTable(
+  'nex_idempotency_keys',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+    scope: varchar('scope', { length: 64 }).notNull(),
+    key: varchar('key', { length: 128 }).notNull(),
+    statusCode: integer('status_code').notNull().default(200),
+    responseBody: text('response_body').notNull().default('{}'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('nex_idempotency_scope_key_uidx').on(t.scope, t.key),
+    index('nex_idempotency_created_idx').on(t.createdAt),
   ],
 )
 
@@ -96,9 +118,10 @@ export const cashRequests = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     type: cashType('type').notNull(),
-    amount: integer('amount').notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
     status: cashStatus('status').notNull().default('대기'),
     memo: varchar('memo', { length: 200 }).notNull().default(''),
+    idempotencyKey: varchar('idempotency_key', { length: 128 }),
     requestedAt: timestamp('requested_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -125,9 +148,9 @@ export const bets = pgTable(
     market: varchar('market', { length: 80 }).notNull().default('승무패'),
     line: varchar('line', { length: 40 }).notNull().default('-'),
     whenLabel: varchar('when_label', { length: 20 }).notNull().default('일반'),
-    stake: integer('stake').notNull(),
+    stake: bigint('stake', { mode: 'number' }).notNull(),
     odds: numeric('odds', { precision: 12, scale: 4 }).notNull(),
-    potentialPayout: integer('potential_payout').notNull(),
+    potentialPayout: bigint('potential_payout', { mode: 'number' }).notNull(),
     status: betStatus('status').notNull().default('진행 중'),
     matchLive: boolean('match_live').notNull().default(false),
     placedAt: timestamp('placed_at', { withTimezone: true })
@@ -152,8 +175,8 @@ export const casinoBets = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 160 }).notNull(),
     kind: casinoKind('kind').notNull().default('other'),
-    stake: integer('stake').notNull(),
-    payout: integer('payout').notNull().default(0),
+    stake: bigint('stake', { mode: 'number' }).notNull(),
+    payout: bigint('payout', { mode: 'number' }).notNull().default(0),
     status: betStatus('status').notNull().default('진행 중'),
     placedAt: timestamp('placed_at', { withTimezone: true })
       .notNull()

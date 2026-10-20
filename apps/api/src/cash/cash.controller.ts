@@ -1,7 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
 import { ParseIdPipe } from '../common/parse-id.pipe.js'
 import { CashService } from './cash.service.js'
-import { CashListQueryDto, UpdateCashStatusDto } from './dto/cash.dto.js'
+import {
+  CashListQueryDto,
+  CreateCashDto,
+  UpdateCashStatusDto,
+} from './dto/cash.dto.js'
 
 @Controller('cash')
 export class CashController {
@@ -10,6 +14,11 @@ export class CashController {
   @Get()
   list(@Query() query: CashListQueryDto) {
     return this.cashService.list(query)
+  }
+
+  @Post()
+  create(@Body() body: CreateCashDto) {
+    return this.cashService.create(body)
   }
 
   @Get(':id')

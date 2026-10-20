@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
 import { ParseIdPipe } from '../common/parse-id.pipe.js'
 import { BetsService } from './bets.service.js'
 import {
   BetListQueryDto,
   CasinoBetListQueryDto,
+  PlaceBetDto,
+  PlaceCasinoBetDto,
   UpdateBetStatusDto,
 } from './dto/bet.dto.js'
 
@@ -14,6 +16,11 @@ export class BetsController {
   @Get()
   list(@Query() query: BetListQueryDto) {
     return this.betsService.listSports(query)
+  }
+
+  @Post()
+  place(@Body() body: PlaceBetDto) {
+    return this.betsService.placeSport(body)
   }
 
   @Get(':id')
@@ -37,6 +44,11 @@ export class CasinoBetsController {
   @Get()
   list(@Query() query: CasinoBetListQueryDto) {
     return this.betsService.listCasino(query)
+  }
+
+  @Post()
+  place(@Body() body: PlaceCasinoBetDto) {
+    return this.betsService.placeCasino(body)
   }
 
   @Get(':id')

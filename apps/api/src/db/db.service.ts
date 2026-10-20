@@ -14,7 +14,10 @@ export class DbService implements OnModuleDestroy {
       throw new Error('DATABASE_URL is required');
     }
 
-    this.client = postgres(url);
+    const max = Number(process.env.DATABASE_POOL_MAX || 10);
+    this.client = postgres(url, {
+      max: Number.isFinite(max) && max > 0 ? max : 10,
+    });
     this.db = drizzle(this.client, { schema });
   }
 
