@@ -25,3 +25,6 @@ coverage
 .cursor/commit-msg.tmp
 
 apps/api/uploads/
+
+apps/api/logs/
+*.log
