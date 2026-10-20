@@ -1938,8 +1938,11 @@ function sportOf(league) {
   const name = String(league || '').replace(/\s+/g, '')
   if (/MLB|KBO|NPB|CPBL|야구/.test(name)) return '야구'
   if (/NBA|KBL|WKBL|농구/.test(name)) return '농구'
-  if (/NHL|하키/.test(name)) return '아이스하키'
-  if (/NFL/.test(name)) return '미식축구'
+  if (/NHL|아이스하키|하키/.test(name)) return '아이스하키'
+  if (/배구|V리그|VLeague/i.test(name)) return '배구'
+  if (/테니스|ATP|WTA/.test(name)) return '테니스'
+  if (/e스포츠|esport|LOL|Dota|CS:?GO|발로란트/i.test(name)) return 'e스포츠'
+  if (/NFL|미식/.test(name)) return '미식축구'
   if (/NPL|EPL|K리그|라리가|분데스|세리에|리그앙|J리그|축구|MLS|UEFA|프리미어/.test(name)) return '축구'
   return '기타'
 }
@@ -2466,27 +2469,177 @@ function makeRiskChip(label, on, attrs = {}) {
   return button
 }
 
-const RISK_SPORTS = ['축구', '야구', '농구', '배구', '아이스하키', '미식축구', '테니스', '기타']
-const RISK_MARKETS = ['핸디캡', '승무패', '언더오버', '스페셜']
+// NEX 원본 사이드바 종목 (risk_files i18n)
+const RISK_SPORTS = ['축구', '농구', '야구', '배구', '아이스하키', '테니스', 'e스포츠']
+// NEX 원본 마켓 카탈로그 labels (risk_files market defs)
+const RISK_MARKETS = [
+  '승무패', '머니라인', '오버언더', '핸디캡', '경기승자', '양팀득점',
+  '홈팀 오버언더', '원정팀 오버언더', '코너킥 오버언더', '코너킥 핸디캡',
+  '전반전 승무패', '전반전 핸디캡', '전반전 오버언더',
+  '전반전(5이닝) 핸디캡', '전반전(5이닝) 오버언더', '전반전(5이닝) 홈팀 오버언더', '전반전(5이닝) 원정팀 오버언더',
+  '하프타임 승패', '하프타임 오버언더', '1쿼터 승자', '1쿼터 오버언더',
+  '1피리어드 승자', '2피리어드 승자', '1피리어드 핸디캡', '2피리어드 핸디캡', '1피리어드 오버언더', '2피리어드 오버언더',
+  '1세트 승자', '1세트 핸디캡', '1세트 오버언더', '세트 핸디캡', '세트수 오버언더', '후반전 오버언더',
+  '코너킥 승무패', '1피리어드 승무패', '2피리어드 승무패', '3피리어드 승무패',
+  '하프타임 핸디캡', '하프타임 승무패', '후반전 승무패', '후반전 승패', '후반전 핸디캡', '전반전(5이닝) 승자',
+  '2이닝 승자', '3이닝 승자', '4이닝 승자', '5이닝 승자', '6이닝 승자', '7이닝 승자', '8이닝 승자',
+  '1이닝 핸디캡', '2이닝 핸디캡', '3이닝 핸디캡', '4이닝 핸디캡', '5이닝 핸디캡', '6이닝 핸디캡', '7이닝 핸디캡', '8이닝 핸디캡',
+  '2이닝 오버언더', '3이닝 오버언더', '4이닝 오버언더', '5이닝 오버언더', '6이닝 오버언더', '7이닝 오버언더', '8이닝 오버언더',
+]
 const RISK_WHENS = ['실시간', '일반']
+const RISK_DIM_META = {
+  sport: { label: '종목', values: RISK_SPORTS, key: 'sport' },
+  market: { label: '유형', values: RISK_MARKETS, key: 'market' },
+  when: { label: '구분', values: RISK_WHENS, key: 'when' },
+}
 
-function makeRiskFilterRow(label, key) {
-  const row = document.createElement('div')
-  row.dataset.riskFilterRow = key
-  row.className = 'flex flex-wrap items-center justify-center gap-1.5'
+function riskBare(value) {
+  return String(value || '').replace(/\s*\(t\)\s*$/i, '').trim()
+}
+
+function riskNormMarket(value) {
+  return riskBare(value).replace(/언더오버/g, '오버언더')
+}
+
+function riskParsePicks(raw) {
+  if (!raw || raw === '__all__') return []
+  return String(raw).split('|').map((item) => item.trim()).filter(Boolean)
+}
+
+function riskEncodePicks(values) {
+  return values.length ? values.join('|') : '__all__'
+}
+
+function riskSummaryLabel(values) {
+  if (!values.length) return '전체'
+  if (values.length <= 2) return values.join(' · ')
+  return `${values[0]} 외 ${values.length - 1}`
+}
+
+function riskRowMatchesPicks(rowValue, picks, dim) {
+  if (!picks.length) return true
+  if (dim === 'market') {
+    const norm = riskNormMarket(rowValue)
+    return picks.some((pick) => riskNormMarket(pick) === norm)
+  }
+  const bare = riskBare(rowValue)
+  return picks.some((pick) => riskBare(pick) === bare)
+}
+
+function makeRiskFilterTrigger(label, dim) {
+  const wrap = document.createElement('div')
+  wrap.dataset.riskFilterRow = dim
+  wrap.className = 'relative flex items-center gap-1.5'
   const name = document.createElement('span')
-  name.className = 'mr-1 text-[11px] font-bold tracking-wide text-muted whitespace-nowrap'
+  name.className = 'text-[11px] font-bold tracking-wide text-muted whitespace-nowrap'
   name.textContent = label
-  const chips = document.createElement('div')
-  chips.dataset.riskChips = key
-  chips.className = 'flex flex-wrap items-center justify-center gap-1.5'
-  row.append(name, chips)
-  return row
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.dataset.riskOpen = dim
+  button.className = 'rounded-md border border-edge bg-input px-3 py-1.5 text-[12px] font-bold text-fg hover:border-accent'
+  button.textContent = '전체'
+  wrap.append(name, button)
+  return wrap
+}
+
+function closeRiskFilterCard(board) {
+  board.querySelector('[data-risk-card]')?.remove()
+  board.dataset.riskOpenDim = ''
+}
+
+function openRiskFilterCard(board, dim, lines) {
+  const meta = RISK_DIM_META[dim]
+  const row = board.querySelector(`[data-risk-filter-row="${dim}"]`)
+  if (!meta || !row) return
+  closeRiskFilterCard(board)
+  board.dataset.riskOpenDim = dim
+  // dataset keys: riskSport / riskMarket / riskWhen
+  const dataKey = dim === 'sport' ? 'riskSport' : dim === 'market' ? 'riskMarket' : 'riskWhen'
+  const picks = new Set(riskParsePicks(board.dataset[dataKey]))
+
+  const card = document.createElement('div')
+  card.dataset.riskCard = dim
+  card.className = 'absolute left-1/2 top-full z-30 mt-2 w-[min(560px,92vw)] -translate-x-1/2 rounded-xl border border-edge bg-panel p-3 shadow-card'
+  const title = document.createElement('div')
+  title.className = 'mb-2 flex items-center justify-between gap-2'
+  const heading = document.createElement('strong')
+  heading.className = 'text-[13px] font-black text-fg'
+  heading.textContent = `${meta.label} 선택`
+  const clear = document.createElement('button')
+  clear.type = 'button'
+  clear.dataset.riskCardAll = '1'
+  clear.className = 'text-[11px] font-bold text-dim hover:text-accent'
+  clear.textContent = '전체'
+  title.append(heading, clear)
+
+  const grid = document.createElement('div')
+  grid.className = dim === 'market'
+    ? 'grid max-h-[320px] grid-cols-2 gap-1.5 overflow-y-auto sm:grid-cols-3'
+    : 'grid grid-cols-2 gap-1.5 sm:grid-cols-3'
+  meta.values.forEach((value) => {
+    const on = picks.has(value)
+    const n = countRiskDim(lines, meta.key, value)
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.dataset.riskCardPick = value
+    item.className = on
+      ? 'rounded-lg border border-accent bg-accent-soft px-2.5 py-2 text-left text-[12px] font-bold text-accent'
+      : 'rounded-lg border border-edge bg-card px-2.5 py-2 text-left text-[12px] font-bold text-dim hover:text-fg hover:bg-card-hover'
+    item.innerHTML = `<span class="block truncate">${value}</span><span class="mt-0.5 block text-[11px] font-black tabular-nums opacity-80">${n}</span>`
+    grid.append(item)
+  })
+
+  const actions = document.createElement('div')
+  actions.className = 'mt-3 flex justify-end gap-2'
+  const cancel = document.createElement('button')
+  cancel.type = 'button'
+  cancel.dataset.riskCardClose = '1'
+  cancel.className = 'h-8 rounded-lg border border-edge px-3 text-[12px] font-bold text-dim'
+  cancel.textContent = '닫기'
+  const apply = document.createElement('button')
+  apply.type = 'button'
+  apply.dataset.riskCardApply = '1'
+  apply.className = 'h-8 rounded-lg bg-accent px-3 text-[12px] font-bold text-on-accent'
+  apply.textContent = '적용'
+  actions.append(cancel, apply)
+  card.append(title, grid, actions)
+  row.append(card)
+
+  card.addEventListener('click', (event) => {
+    event.stopPropagation()
+    if (event.target.closest('[data-risk-card-close]')) {
+      closeRiskFilterCard(board)
+      return
+    }
+    if (event.target.closest('[data-risk-card-all]')) {
+      picks.clear()
+      grid.querySelectorAll('[data-risk-card-pick]').forEach((node) => {
+        node.className = 'rounded-lg border border-edge bg-card px-2.5 py-2 text-left text-[12px] font-bold text-dim hover:text-fg hover:bg-card-hover'
+      })
+      return
+    }
+    const pickBtn = event.target.closest('[data-risk-card-pick]')
+    if (pickBtn) {
+      const value = pickBtn.dataset.riskCardPick
+      if (picks.has(value)) picks.delete(value)
+      else picks.add(value)
+      const on = picks.has(value)
+      pickBtn.className = on
+        ? 'rounded-lg border border-accent bg-accent-soft px-2.5 py-2 text-left text-[12px] font-bold text-accent'
+        : 'rounded-lg border border-edge bg-card px-2.5 py-2 text-left text-[12px] font-bold text-dim hover:text-fg hover:bg-card-hover'
+      return
+    }
+    if (event.target.closest('[data-risk-card-apply]')) {
+      board.dataset[dataKey] = riskEncodePicks([...picks])
+      closeRiskFilterCard(board)
+      paintRiskMonitor()
+    }
+  })
 }
 
 function buildRiskWatchBoard() {
   const board = document.createElement('div')
-  board.dataset.riskBoard = 'watch5'
+  board.dataset.riskBoard = 'watch6'
   board.dataset.riskSport = '__all__'
   board.dataset.riskMarket = '__all__'
   board.dataset.riskWhen = '__all__'
@@ -2536,11 +2689,11 @@ function buildRiskWatchBoard() {
 
   const rows = document.createElement('div')
   rows.dataset.riskPickRows = '1'
-  rows.className = 'flex w-full flex-col items-center gap-1.5'
+  rows.className = 'flex w-full flex-wrap items-center justify-center gap-3'
   rows.append(
-    makeRiskFilterRow('종목', 'sport'),
-    makeRiskFilterRow('유형', 'market'),
-    makeRiskFilterRow('구분', 'when'),
+    makeRiskFilterTrigger('종목', 'sport'),
+    makeRiskFilterTrigger('유형', 'market'),
+    makeRiskFilterTrigger('구분', 'when'),
   )
 
   filters.append(top, rows)
@@ -2560,7 +2713,7 @@ function reshapeRisk() {
   if (!location.pathname.endsWith('/risk.html')) return
   ensureRiskSummaryCards()
   const existing = document.querySelector('[data-risk-board]')
-  if (existing?.dataset.riskBoard === 'watch5') return
+  if (existing?.dataset.riskBoard === 'watch6') return
   if (existing) existing.remove()
   const stack = document.querySelector('main > .space-y-4')
   if (!stack) return
@@ -2727,14 +2880,28 @@ function bindRiskWatchFilters(board) {
   if (board.dataset.riskBound === '1') return
   board.dataset.riskBound = '1'
   board.addEventListener('click', (event) => {
-    const pickBtn = event.target.closest('button[data-risk-pick][data-risk-dim]')
-    if (!pickBtn) return
-    const dim = pickBtn.dataset.riskDim
-    const value = pickBtn.dataset.riskPick || '__all__'
-    if (dim === 'sport') board.dataset.riskSport = value
-    if (dim === 'market') board.dataset.riskMarket = value
-    if (dim === 'when') board.dataset.riskWhen = value
-    paintRiskMonitor()
+    const openBtn = event.target.closest('button[data-risk-open]')
+    if (openBtn) {
+      event.stopPropagation()
+      const dim = openBtn.dataset.riskOpen
+      if (board.dataset.riskOpenDim === dim) {
+        closeRiskFilterCard(board)
+        return
+      }
+      const lines = riskWatchLines(openRiskRows(store()))
+      openRiskFilterCard(board, dim, lines)
+      return
+    }
+  })
+  document.addEventListener('click', (event) => {
+    if (!board.isConnected) return
+    if (event.target.closest('[data-risk-board]')?.dataset.riskBoard !== board.dataset.riskBoard) {
+      closeRiskFilterCard(board)
+      return
+    }
+    if (!event.target.closest('[data-risk-card]') && !event.target.closest('button[data-risk-open]')) {
+      closeRiskFilterCard(board)
+    }
   })
   const search = board.querySelector('[data-risk-search]')
   const sort = board.querySelector('select[data-risk-sort]')
@@ -2792,53 +2959,51 @@ function paintRiskWatchTable(board, lines) {
 }
 
 function countRiskDim(lines, key, value) {
+  if (key === 'market') {
+    const norm = riskNormMarket(value)
+    return lines.filter((row) => riskNormMarket(row.market) === norm).length
+  }
   return lines.filter((row) => row[key] === value).length
 }
 
-function paintRiskDimChips(board, lines, dim, key, values, selected) {
-  const host = board.querySelector(`[data-risk-chips="${dim}"]`)
-  if (!host) return
-  const pickAll = !selected || selected === '__all__'
-  host.replaceChildren(
-    makeRiskChip(`전체 ${lines.length}`, pickAll, { riskPick: '__all__', riskDim: dim }),
-    ...values.map((value) => {
-      const n = countRiskDim(lines, key, value)
-      return makeRiskChip(`${value} ${n}`, !pickAll && selected === value, {
-        riskPick: value,
-        riskDim: dim,
-      })
-    }),
-  )
-}
-
-function paintRiskWatchFilters(board, lines) {
+function paintRiskWatchFilters(board) {
   const search = board.querySelector('[data-risk-search]')
   const sort = board.querySelector('select[data-risk-sort]')
   if (search && search.value !== (board.dataset.riskQ || '')) search.value = board.dataset.riskQ || ''
   if (sort) sort.value = board.dataset.riskSort || 'risk'
-  paintRiskDimChips(board, lines, 'sport', 'sport', RISK_SPORTS, board.dataset.riskSport)
-  paintRiskDimChips(board, lines, 'market', 'market', RISK_MARKETS, board.dataset.riskMarket)
-  paintRiskDimChips(board, lines, 'when', 'when', RISK_WHENS, board.dataset.riskWhen)
+  ;[
+    ['sport', 'riskSport'],
+    ['market', 'riskMarket'],
+    ['when', 'riskWhen'],
+  ].forEach(([dim, dataKey]) => {
+    const button = board.querySelector(`button[data-risk-open="${dim}"]`)
+    if (!button) return
+    const picks = riskParsePicks(board.dataset[dataKey])
+    button.textContent = riskSummaryLabel(picks)
+    button.className = picks.length
+      ? 'rounded-md border border-accent bg-accent-soft px-3 py-1.5 text-[12px] font-bold text-accent'
+      : 'rounded-md border border-edge bg-input px-3 py-1.5 text-[12px] font-bold text-fg hover:border-accent'
+  })
 }
 
 function paintRiskMonitor(data = store()) {
   if (!location.pathname.endsWith('/risk.html')) return
   reshapeRisk()
-  const board = document.querySelector('[data-risk-board="watch4"]')
+  const board = document.querySelector('[data-risk-board="watch6"]')
   if (!board) return
   bindRiskWatchFilters(board)
   const rows = openRiskRows(data)
   const lines = riskWatchLines(rows)
-  paintRiskWatchFilters(board, lines)
-  const sport = board.dataset.riskSport || '__all__'
-  const market = board.dataset.riskMarket || '__all__'
-  const when = board.dataset.riskWhen || '__all__'
+  paintRiskWatchFilters(board)
+  const sports = riskParsePicks(board.dataset.riskSport)
+  const markets = riskParsePicks(board.dataset.riskMarket)
+  const whens = riskParsePicks(board.dataset.riskWhen)
   const q = (board.dataset.riskQ || '').toLowerCase()
   const sort = board.dataset.riskSort || 'risk'
   let filtered = lines.slice()
-  if (sport && sport !== '__all__') filtered = filtered.filter((row) => row.sport === sport)
-  if (market && market !== '__all__') filtered = filtered.filter((row) => row.market === market)
-  if (when && when !== '__all__') filtered = filtered.filter((row) => row.when === when)
+  if (sports.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.sport, sports, 'sport'))
+  if (markets.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.market, markets, 'market'))
+  if (whens.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.when, whens, 'when'))
   if (q) {
     filtered = filtered.filter((row) =>
       [row.league, row.sport, row.home, row.away, row.match, row.market, row.when]
