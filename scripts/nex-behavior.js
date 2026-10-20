@@ -2488,6 +2488,17 @@ function fillRiskMemberTable(section, lines) {
 function paintRiskMembers(data, rows) {
   const section = [...document.querySelectorAll('main h2')].find((item) => item.textContent.includes('회원별 리스크'))?.closest('section')
   if (!section) return
+  const title = section.querySelector('h2')
+  const titleBox = title?.parentElement
+  const titleRow = titleBox?.parentElement
+  if (titleBox) {
+    titleBox.classList.add('w-full', 'text-center')
+    title?.classList.add('inline-flex', 'items-center', 'justify-center')
+  }
+  if (titleRow) {
+    titleRow.classList.remove('justify-between', 'items-end')
+    titleRow.classList.add('w-full')
+  }
   const empty = [...section.children].find((node) => node.tagName === 'DIV' && /없습니다/.test(node.textContent || ''))
   let host = section.querySelector('[data-risk-members]')
   if (!host) {
