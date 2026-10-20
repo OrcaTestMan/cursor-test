@@ -62,6 +62,30 @@ export const users = pgTable(
   ],
 )
 
+/** 머니 원장(잔액 변동 이력) */
+export const moneyMoves = pgTable(
+  'nex_money_moves',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    amount: integer('amount').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    reason: varchar('reason', { length: 40 }).notNull(),
+    refType: varchar('ref_type', { length: 40 }).notNull().default(''),
+    refId: integer('ref_id'),
+    memo: varchar('memo', { length: 200 }).notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('nex_money_moves_user_idx').on(t.userId),
+    index('nex_money_moves_created_idx').on(t.createdAt),
+  ],
+)
+
 /** 입출금 신청 */
 export const cashRequests = pgTable(
   'nex_cash_requests',

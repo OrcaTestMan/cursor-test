@@ -7,8 +7,8 @@ alwaysApply: true
 
 최신 사용자 요청이 우선한다. 과거 `작업내역.md`와 다르면 아래와 최신 기록을 따른다.
 
-- 제품은 **NEX** 관리·운영 화면이다.
-- 입구 `/`·`/admin`은 `apps/web/public/nex/` 정적 관리 화면으로 연다.
-- 배팅·입출금·리스크·정산·총판·카지노 등 NEX 기능만 유지·확장한다.
-- 영속 데이터는 PostgreSQL `nex` DB(`nex_*` 테이블). 화면 데모 상태는 localStorage `nex-demo-state-v1`일 수 있으나, 서버 DB 스키마가 기준이다.
-- 날짜·목록 기본은 한국 시간(Asia/Seoul). 필터 예외는 `PAGES.md`만 본다.
+- 제품은 **NEX** 관리·운영이다. 영속 기준은 PostgreSQL `nex_*`다.
+- 구축 순서: ① 핵심 DB(회원·머니·배팅·입출금) ② API 목록/상세/상태변경 ③ 페이지를 DB 기준으로 하나씩 ④ 데모 HTML은 참고만.
+- `apps/web/public/nex`·`nex-demo-state-v1`은 참고용이다. 완성본·확장 대상이 아니다.
+- 날짜·목록 기본은 Asia/Seoul. 필터 예외는 `PAGES.md`만 본다.
+- 상세 순서는 `docs/CORE.md`다.

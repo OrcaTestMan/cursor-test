@@ -18,10 +18,12 @@
 
 | 테이블 | 용도 |
 | --- | --- |
-| `nex_users` | 회원·관리자 |
-| `nex_cash_requests` | 입출금 신청 |
-| `nex_bets` | 스포츠 배팅 |
-| `nex_casino_bets` | 카지노 배팅 |
+| `nex_users` | 회원·관리자 (**핵심**) |
+| `nex_money_moves` | 머니 원장 (**핵심**) |
+| `nex_cash_requests` | 입출금 신청 (**핵심**) |
+| `nex_bets` | 스포츠 배팅 (**핵심**) |
+| `nex_casino_bets` | 카지노 배팅 (**핵심**) |
+
 | `nex_point_moves` | 포인트 이동 |
 | `nex_dist_agents` | 총판 |
 | `nex_dist_payouts` | 총판 지급 |
