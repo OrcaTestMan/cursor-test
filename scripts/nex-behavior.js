@@ -2749,7 +2749,7 @@ function paintRiskWatchTable(board, lines) {
   const body = table?.tBodies[0]
   const count = board.querySelector('[data-risk-count]')
   if (!headRow || !body) return
-  const headers = ['리그', '종목', '홈팀', '원정', '건수', '유형', '구분', '배팅금', '예상 리스크']
+  const headers = ['리그', '종목', '홈팀', '원정', '유형', '건수', '배팅금', '구분', '예상 리스크']
   headRow.replaceChildren(...headers.map((label) => {
     const cell = document.createElement('th')
     cell.textContent = label
@@ -2772,10 +2772,10 @@ function paintRiskWatchTable(board, lines) {
       testTag(row.sport),
       testTag(row.home),
       testTag(row.away),
-      `${row.count}건`,
       testTag(row.market),
-      testTag(row.when),
+      `${row.count}건`,
       riskMoney(row.stake),
+      testTag(row.when),
       riskMoney(row.risk),
     ].forEach((value) => {
       const cell = document.createElement('td')
