@@ -86,6 +86,24 @@ export class PlaceBetDto {
   @IsString({ message: '멱등키(idempotencyKey)가 필요합니다.' })
   @MaxLength(128)
   idempotencyKey!: string
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  marketId?: number
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  matchId?: number
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  outcomeId?: number
 }
 
 export class PlaceCasinoBetDto {

@@ -29,6 +29,13 @@
       "when": 1792600000000,
       "tag": "0003_money_nonneg_settlement",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792640000000,
+      "tag": "0004_risk_seed_schema",
+      "breakpoints": true
     }
   ]
 }

@@ -50,6 +50,10 @@ export const users = pgTable(
     blockReason: varchar('block_reason', { length: 200 }).notNull().default(''),
     money: bigint('money', { mode: 'number' }).notNull().default(0),
     points: bigint('points', { mode: 'number' }).notNull().default(0),
+    grade: varchar('grade', { length: 20 }).notNull().default('normal'),
+    lastIp: varchar('last_ip', { length: 64 }).notNull().default(''),
+    lastDevice: varchar('last_device', { length: 120 }).notNull().default(''),
+    withdrawAccount: varchar('withdraw_account', { length: 120 }).notNull().default(''),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -381,4 +385,127 @@ export const settings = pgTable('nex_settings', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
+})
+
+/** 경기 */
+export const matches = pgTable('nex_matches', {
+  id: serial('id').primaryKey(),
+  sport: varchar('sport', { length: 60 }).notNull().default(''),
+  league: varchar('league', { length: 120 }).notNull().default(''),
+  name: varchar('name', { length: 200 }).notNull(),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  live: boolean('live').notNull().default(false),
+  tier: varchar('tier', { length: 20 }).notNull().default('main'),
+  status: varchar('status', { length: 20 }).notNull().default('open'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/** 마켓 */
+export const markets = pgTable('nex_markets', {
+  id: serial('id').primaryKey(),
+  matchId: integer('match_id')
+    .notNull()
+    .references(() => matches.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 80 }).notNull(),
+  suspended: boolean('suspended').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/** 결과(배당) */
+export const outcomes = pgTable('nex_outcomes', {
+  id: serial('id').primaryKey(),
+  marketId: integer('market_id')
+    .notNull()
+    .references(() => markets.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 80 }).notNull(),
+  oddsOpen: numeric('odds_open', { precision: 12, scale: 4 }).notNull(),
+  oddsCurrent: numeric('odds_current', { precision: 12, scale: 4 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/** 배팅 다리 */
+export const betLegs = pgTable(
+  'nex_bet_legs',
+  {
+    id: serial('id').primaryKey(),
+    betId: integer('bet_id')
+      .notNull()
+      .references(() => bets.id, { onDelete: 'cascade' }),
+    matchId: integer('match_id').references(() => matches.id, { onDelete: 'set null' }),
+    marketId: integer('market_id').references(() => markets.id, {
+      onDelete: 'set null',
+    }),
+    outcomeId: integer('outcome_id').references(() => outcomes.id, {
+      onDelete: 'set null',
+    }),
+    oddsAtBet: numeric('odds_at_bet', { precision: 12, scale: 4 }).notNull(),
+    line: varchar('line', { length: 40 }).notNull().default('-'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('nex_bet_legs_bet_idx').on(t.betId),
+    index('nex_bet_legs_match_idx').on(t.matchId),
+  ],
+)
+
+/** 감사 로그 */
+export const auditLogs = pgTable(
+  'nex_audit_logs',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+    actor: varchar('actor', { length: 80 }).notNull(),
+    targetType: varchar('target_type', { length: 40 }).notNull(),
+    targetId: varchar('target_id', { length: 40 }).notNull(),
+    action: varchar('action', { length: 80 }).notNull(),
+    reason: varchar('reason', { length: 400 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('nex_audit_logs_created_idx').on(t.createdAt)],
+)
+
+/** 리스크 노출 집계 */
+export const riskExposure = pgTable(
+  'nex_risk_exposure',
+  {
+    id: serial('id').primaryKey(),
+    matchId: integer('match_id')
+      .notNull()
+      .references(() => matches.id, { onDelete: 'cascade' }),
+    marketId: integer('market_id')
+      .notNull()
+      .references(() => markets.id, { onDelete: 'cascade' }),
+    outcomeId: integer('outcome_id')
+      .notNull()
+      .references(() => outcomes.id, { onDelete: 'cascade' }),
+    stakeSum: bigint('stake_sum', { mode: 'number' }).notNull().default(0),
+    payoutSum: bigint('payout_sum', { mode: 'number' }).notNull().default(0),
+    betCount: integer('bet_count').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('nex_risk_exposure_uidx').on(t.matchId, t.marketId, t.outcomeId),
+  ],
+)
+
+export const riskSettings = pgTable('nex_risk_settings', {
+  id: serial('id').primaryKey(),
+  lossLimit: bigint('loss_limit', { mode: 'number' }).notNull().default(5_000_000),
+  weights: text('weights')
+    .notNull()
+    .default(
+      '{"limit":35,"skew":20,"imminent":15,"oddsDrop":10,"sharp":10,"multi":10}',
+    ),
+  alertThresholds: text('alert_thresholds').notNull().default('{}'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const riskAlerts = pgTable('nex_risk_alerts', {
+  id: serial('id').primaryKey(),
+  kind: varchar('kind', { length: 60 }).notNull(),
+  severity: varchar('severity', { length: 20 }).notNull().default('medium'),
+  message: varchar('message', { length: 400 }).notNull(),
+  matchId: integer('match_id'),
+  userId: integer('user_id'),
+  acked: boolean('acked').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

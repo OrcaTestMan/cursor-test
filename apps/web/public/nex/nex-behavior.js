@@ -2373,10 +2373,40 @@ function casinoKindOf(bet) {
   return 'other'
 }
 
+async function hydrateRiskFromApi() {
+  if (!location.pathname.endsWith('/risk.html')) return
+  try {
+    const [summary, matches] = await Promise.all([
+      fetch('/api/risk/summary').then((r) => r.json()),
+      fetch('/api/risk/matches?limit=20').then((r) => r.json()),
+    ])
+    const riskEl = document.querySelector('[data-risk-summary] .text-danger')
+    if (riskEl && summary?.maxRisk != null) {
+      riskEl.textContent = Number(summary.maxRisk).toLocaleString('ko-KR')
+    }
+    const liveEl = document.querySelector('[data-risk-summary] .text-lg.text-fg')
+    if (liveEl && Array.isArray(matches?.items)) {
+      liveEl.textContent = String(matches.items.filter((m) => m.live).length)
+    }
+    // SSE: 3초마다 힌트 수신 → 카드 갱신
+    if (!window.__riskSse) {
+      window.__riskSse = new EventSource('/api/risk/stream')
+      window.__riskSse.onmessage = () => {
+        hydrateRiskFromApi()
+      }
+    }
+  } catch (err) {
+    console.warn('risk api hydrate failed', err)
+  }
+}
+
 function ensureRiskSummaryCards() {
   if (!location.pathname.endsWith('/risk.html')) return
   const ready = document.querySelector('[data-risk-summary][data-risk-ready="3"]')
-  if (ready?.querySelector('[data-risk-zones]') && ready.textContent.includes('진행 중 배팅 ( 라이브 카지노 )')) return
+  if (ready?.querySelector('[data-risk-zones]') && ready.textContent.includes('진행 중 배팅 ( 라이브 카지노 )')) {
+    hydrateRiskFromApi()
+    return
+  }
   document.querySelectorAll('[data-risk-summary]').forEach((node) => node.remove())
   const grid = [...document.querySelectorAll('main .grid')].find((node) =>
     [...node.querySelectorAll('p,div')].some((item) => /미확정 리스크 금액|전체 최대 잠재손실|위험 경기|위험 건수|진행 중 배팅/.test(item.textContent || '')),
@@ -2412,6 +2442,7 @@ function ensureRiskSummaryCards() {
   wrap.append(top, zones)
   grid.replaceWith(wrap)
   tintRiskBetZones()
+  hydrateRiskFromApi()
 }
 
 function tintRiskBetZones() {

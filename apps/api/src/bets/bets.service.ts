@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common'
 import { and, count, desc, eq, ilike, or, type SQL } from 'drizzle-orm'
 import {
@@ -13,6 +15,7 @@ import { andTokens, searchTokens } from '../common/search-query.js'
 import { DbService } from '../db/db.service.js'
 import { betSettlementEvents, bets, casinoBets, users } from '../db/schema.js'
 import { MoneyRef, WalletService, type WalletTx } from '../money/wallet.service.js'
+import { RiskService } from '../risk/risk.service.js'
 import {
   type BetListQueryDto,
   type CasinoBetListQueryDto,
@@ -26,6 +29,8 @@ export class BetsService {
   constructor(
     private readonly dbService: DbService,
     private readonly wallet: WalletService,
+    @Inject(forwardRef(() => RiskService))
+    private readonly risk: RiskService,
   ) {}
 
   private get db() {
@@ -94,6 +99,9 @@ export class BetsService {
     const cached = await this.wallet.getIdempotent(scope, body.idempotencyKey)
     if (cached) return cached.body
 
+    if (body.marketId) {
+      await this.risk.assertMarketOpen(body.marketId)
+    }
     const result = await this.wallet.withTx(async (tx) => {
       // 데드락 방지: 회원 행 잠금 → 배팅 INSERT → 원장 (출금과 동일 순서)
       await this.wallet.lockUser(tx, body.userId)
@@ -121,6 +129,16 @@ export class BetsService {
         refType: MoneyRef.betPlace,
         refId: bet.id,
       })
+      if (body.matchId && body.marketId && body.outcomeId) {
+        await this.risk.bumpExposure(tx, {
+          matchId: body.matchId,
+          marketId: body.marketId,
+          outcomeId: body.outcomeId,
+          stake: body.stake,
+          payout: body.potentialPayout,
+          dir: 1,
+        })
+      }
       return bet
     })
     await this.wallet.saveIdempotent(scope, body.idempotencyKey, 201, result)
