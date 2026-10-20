@@ -70,13 +70,13 @@
 
 ## dev 커밋·태그
 
-| 태그 | 의미 |
-|------|------|
-| `night-step2fix` | 머니 보완 완료 |
-| `night-step3` | 시드/0004 완료 |
-| `night-step4` | 리스크 API+부분 화면 |
+| 태그 | 커밋 | 의미 |
+|------|------|------|
+| `night-step2fix` | `c275918` | 머니 보완 완료 |
+| `night-step3` | `5f496e8` | 시드/0004 완료 |
+| `night-step4` | `5f496e8` | 리스크 API+부분 화면 ([3][4] 동일 커밋) |
 
-정확한 해시는 `git rev-parse night-step3 night-step4` 및 `git log --oneline dev -10` 참고.
+브랜치: `dev` (main 미병합).
 
 ## main 병합 승인 요청 목록
 
