@@ -8,6 +8,6 @@ export class AppService {
 
   async health() {
     await this.dbService.db.execute(sql`SELECT 1`);
-    return { status: 'ok' as const };
+    return { status: 'ok' as const, db: 'up' as const };
   }
 }

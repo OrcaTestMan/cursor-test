@@ -23,7 +23,8 @@ export class UsersService {
 
   async list(query: UserListQueryDto): Promise<Page<typeof users.$inferSelect>> {
     const { page, pageSize, offset } = pageParams(query)
-    const range = resolveDateRange(query)
+    // 회원 목록은 기간 미지정 시 전체 (오늘만이면 시드·기존 회원이 빠짐)
+    const range = resolveDateRange({ ...query, range: query.range ?? 'all' })
     const filters: SQL[] = []
     const date = dateCondition(users.createdAt, range)
     if (date) filters.push(date)

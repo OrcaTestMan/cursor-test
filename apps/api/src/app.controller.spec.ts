@@ -16,7 +16,10 @@ describe('AppController', () => {
   });
 
   it('returns ok from health', async () => {
-    appService.health.mockResolvedValue({ status: 'ok' });
-    await expect(appController.health()).resolves.toEqual({ status: 'ok' });
+    appService.health.mockResolvedValue({ status: 'ok', db: 'up' });
+    await expect(appController.health()).resolves.toEqual({
+      status: 'ok',
+      db: 'up',
+    });
   });
 });
