@@ -2401,11 +2401,28 @@ function ensureRiskSummaryCards() {
   })
   wrap.append(top, zones)
   grid.replaceWith(wrap)
+  tintRiskBetZones()
+}
+
+function tintRiskBetZones() {
+  const tints = {
+    live: { wash: 'rgba(244, 67, 79, 0.07)', edge: 'rgba(244, 67, 79, 0.18)' },
+    sport: { wash: 'rgba(34, 224, 122, 0.07)', edge: 'rgba(34, 224, 122, 0.18)' },
+    'casino-live': { wash: 'rgba(59, 130, 246, 0.08)', edge: 'rgba(59, 130, 246, 0.20)' },
+    'casino-slot': { wash: 'rgba(255, 184, 12, 0.08)', edge: 'rgba(255, 184, 12, 0.20)' },
+  }
+  Object.entries(tints).forEach(([tone, tint]) => {
+    const section = document.querySelector(`[data-risk-zones] [data-tone="${tone}"]`)
+    if (!section) return
+    section.style.background = `linear-gradient(${tint.wash}, ${tint.wash}), #191c1f`
+    section.style.borderColor = tint.edge
+  })
 }
 
 function paintRiskSummary(open, liveNames) {
   if (!location.pathname.endsWith('/risk.html')) return
   ensureRiskSummaryCards()
+  tintRiskBetZones()
   const liveBets = open.filter((bet) => marketOf(bet[4], bet[2]).when === '실시간')
   const normalBets = open.filter((bet) => marketOf(bet[4], bet[2]).when !== '실시간')
   const stakeSum = (rows) => rows.reduce((sum, bet) => sum + Number(bet[3] || 0), 0)
