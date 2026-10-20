@@ -2689,7 +2689,7 @@ function openRiskFilterCard(board, dim, lines) {
 
 function buildRiskWatchBoard() {
   const board = document.createElement('div')
-  board.dataset.riskBoard = 'watch7'
+  board.dataset.riskBoard = 'watch8'
   board.dataset.riskSport = '__all__'
   board.dataset.riskMarket = '__all__'
   board.dataset.riskWhen = '__all__'
@@ -2709,11 +2709,11 @@ function buildRiskWatchBoard() {
 
   const filters = document.createElement('div')
   filters.dataset.riskFilters = '1'
-  filters.className = 'flex w-full flex-wrap items-center justify-between gap-3 px-4 pt-3'
+  filters.className = 'flex w-full flex-wrap items-center justify-center gap-3 px-4 pt-3'
 
   const left = document.createElement('div')
   left.dataset.riskPickRows = '1'
-  left.className = 'flex min-w-0 flex-wrap items-center gap-3'
+  left.className = 'flex flex-wrap items-center justify-center gap-3'
   const count = document.createElement('span')
   count.dataset.riskCount = '1'
   count.className = 'shrink-0 rounded-md bg-card px-2 py-0.5 text-[12px] font-black text-dim'
@@ -2726,15 +2726,15 @@ function buildRiskWatchBoard() {
   )
 
   const right = document.createElement('div')
-  right.className = 'ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2'
+  right.className = 'flex shrink-0 flex-wrap items-center justify-center gap-2'
   const search = document.createElement('input')
   search.type = 'search'
   search.dataset.riskSearch = '1'
   search.placeholder = '팀/리그 검색'
-  search.className = 'h-8 w-[160px] shrink-0 rounded-lg border border-edge bg-input px-3 text-[13px] text-fg'
+  search.className = 'h-8 w-[160px] shrink-0 rounded-lg border border-edge bg-input px-3 text-[13px] text-fg text-center'
   const sort = document.createElement('select')
   sort.dataset.riskSort = '1'
-  sort.className = 'h-8 shrink-0 rounded-lg border border-edge bg-input px-2 text-[13px] text-fg'
+  sort.className = 'h-8 shrink-0 rounded-lg border border-edge bg-input px-2 text-[13px] text-fg text-center'
   ;[
     ['risk', '리스크 높은순'],
     ['stake', '배팅금 높은순'],
@@ -2764,7 +2764,7 @@ function reshapeRisk() {
   if (!location.pathname.endsWith('/risk.html')) return
   ensureRiskSummaryCards()
   const existing = document.querySelector('[data-risk-board]')
-  if (existing?.dataset.riskBoard === 'watch7') return
+  if (existing?.dataset.riskBoard === 'watch8') return
   if (existing) existing.remove()
   const stack = document.querySelector('main > .space-y-4')
   if (!stack) return
@@ -3053,7 +3053,7 @@ function paintRiskWatchFilters(board) {
 function paintRiskMonitor(data = store()) {
   if (!location.pathname.endsWith('/risk.html')) return
   reshapeRisk()
-  const board = document.querySelector('[data-risk-board="watch7"]')
+  const board = document.querySelector('[data-risk-board="watch8"]')
   if (!board) return
   bindRiskWatchFilters(board)
   const rows = openRiskRows(data)
