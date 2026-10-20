@@ -2486,7 +2486,7 @@ function makeRiskFilterRow(label, key) {
 
 function buildRiskWatchBoard() {
   const board = document.createElement('div')
-  board.dataset.riskBoard = 'watch4'
+  board.dataset.riskBoard = 'watch5'
   board.dataset.riskSport = '__all__'
   board.dataset.riskMarket = '__all__'
   board.dataset.riskWhen = '__all__'
@@ -2495,16 +2495,21 @@ function buildRiskWatchBoard() {
 
   const section = document.createElement('section')
   section.dataset.riskWatch = '1'
+  section.className = 'bg-card border border-edge rounded-xl overflow-hidden'
+
+  const head = document.createElement('div')
+  head.className = 'border-b border-edge-soft px-4 py-4 text-center'
+  const heading = document.createElement('h2')
+  heading.textContent = '주시 해야 할 경기 ( 상위 리스크 내역 )'
+  heading.className = 'm-0 text-[28px] font-black leading-tight text-fg'
+  head.append(heading)
 
   const filters = document.createElement('div')
   filters.dataset.riskFilters = '1'
-  filters.className = 'flex flex-col items-center gap-2'
+  filters.className = 'flex flex-col items-center gap-2 px-4 pt-3'
 
   const top = document.createElement('div')
   top.className = 'flex flex-wrap items-center justify-center gap-2'
-  const heading = document.createElement('h2')
-  heading.textContent = '주시 해야 할 경기 ( 상위 리스크 내역 )'
-  heading.className = 'm-0 shrink-0 whitespace-nowrap'
   const count = document.createElement('span')
   count.dataset.riskCount = '1'
   count.className = 'shrink-0 rounded-md bg-card px-2 py-0.5 text-[12px] font-black text-dim'
@@ -2527,7 +2532,7 @@ function buildRiskWatchBoard() {
     option.textContent = label
     sort.append(option)
   })
-  top.append(heading, count, search, sort)
+  top.append(count, search, sort)
 
   const rows = document.createElement('div')
   rows.dataset.riskPickRows = '1'
@@ -2541,12 +2546,12 @@ function buildRiskWatchBoard() {
   filters.append(top, rows)
 
   const wrap = document.createElement('div')
-  wrap.className = 'overflow-x-auto'
+  wrap.className = 'overflow-x-auto px-4 pb-4 pt-3'
   const table = document.createElement('table')
   table.append(document.createElement('thead'), document.createElement('tbody'))
   table.tHead.append(document.createElement('tr'))
   wrap.append(table)
-  section.append(filters, wrap)
+  section.append(head, filters, wrap)
   board.append(section)
   return board
 }
@@ -2555,7 +2560,7 @@ function reshapeRisk() {
   if (!location.pathname.endsWith('/risk.html')) return
   ensureRiskSummaryCards()
   const existing = document.querySelector('[data-risk-board]')
-  if (existing?.dataset.riskBoard === 'watch4') return
+  if (existing?.dataset.riskBoard === 'watch5') return
   if (existing) existing.remove()
   const stack = document.querySelector('main > .space-y-4')
   if (!stack) return
