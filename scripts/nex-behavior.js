@@ -2558,7 +2558,7 @@ function paintRiskPickButton(item, value, stats, on) {
   const count = Number(stats?.count || 0)
   const stake = Number(stats?.stake || 0)
   item.className = riskPickClass(on)
-  item.style.cssText = `${item.style.cssText || ''};min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center`
+  item.style.cssText = 'min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center'
   item.replaceChildren()
   const name = document.createElement('span')
   name.style.cssText = 'display:block;width:100%;font-size:12px;line-height:1.3;white-space:normal;word-break:keep-all;text-align:center'
