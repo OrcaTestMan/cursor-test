@@ -3293,7 +3293,7 @@ function reshapeFinance() {
   const result = document.createElement('section')
   result.dataset.settleBand = 'result'
   const resultTitle = document.createElement('h2')
-  resultTitle.textContent = '입출금 세부 내역'
+  resultTitle.textContent = '입출금 세부 경로'
   const metrics = document.createElement('div')
   metrics.dataset.cashDetail = '1'
   result.append(resultTitle, metrics)
