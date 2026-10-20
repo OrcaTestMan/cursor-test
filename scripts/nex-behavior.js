@@ -274,11 +274,13 @@ function store() {
     }
     if (!data.casinoBets.length) {
       data.casinoBets = [
-        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)' },
-        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)' },
-        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)' },
-        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)' },
+        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)', kind: 'live' },
+        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
+        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)', kind: 'other' },
+        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live' },
+        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛 (t)', kind: 'live' },
+        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
+        { login: 'test123', nick: '테스트용 (t)', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯 (t)', kind: 'slot' },
       ]
     }
     if (!data.distSettles.length) {
@@ -299,14 +301,37 @@ function store() {
   if (data.casinoMemberSeed !== 1) {
     if (!(data.casinoBets || []).every((bet) => bet.login)) {
       data.casinoBets = [
-        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)' },
-        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)' },
-        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)' },
-        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)' },
+        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)', kind: 'live' },
+        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
+        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)', kind: 'other' },
+        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live' },
+        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛 (t)', kind: 'live' },
+        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
+        { login: 'test123', nick: '테스트용 (t)', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯 (t)', kind: 'slot' },
       ]
     }
     data.casinoMemberSeed = 1
+    migrated = true
+  }
+  if (data.casinoKindSeed !== 1) {
+    data.casinoBets = (data.casinoBets || []).map((bet) => ({
+      ...bet,
+      kind: bet.kind || casinoKindOf(bet),
+    }))
+    const openKinds = new Set(
+      data.casinoBets.filter((bet) => bet.status === '진행 중').map((bet) => casinoKindOf(bet)),
+    )
+    if (!openKinds.has('live')) {
+      data.casinoBets.push({
+        login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live',
+      })
+    }
+    if (!openKinds.has('slot')) {
+      data.casinoBets.push({
+        login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot',
+      })
+    }
+    data.casinoKindSeed = 1
     migrated = true
   }
   deriveUsers(data)
@@ -2330,10 +2355,18 @@ function makeRiskMetricCard(label, starter = '0') {
   return card
 }
 
+function casinoKindOf(bet) {
+  if (bet?.kind === 'live' || bet?.kind === 'slot' || bet?.kind === 'other') return bet.kind
+  const name = String(bet?.name || '')
+  if (/슬롯|slot/i.test(name)) return 'slot'
+  if (/바카라|룰렛|블랙잭|에볼루션|라이브|드래곤|타이|카지노/i.test(name)) return 'live'
+  return 'other'
+}
+
 function ensureRiskSummaryCards() {
   if (!location.pathname.endsWith('/risk.html')) return
-  const ready = document.querySelector('[data-risk-summary][data-risk-ready="2"]')
-  if (ready?.querySelector('[data-risk-zones]') && ready.textContent.includes('진행 중인 라이브 경기 수')) return
+  const ready = document.querySelector('[data-risk-summary][data-risk-ready="3"]')
+  if (ready?.querySelector('[data-risk-zones]') && ready.textContent.includes('진행 중 배팅 ( 라이브 카지노 )')) return
   document.querySelectorAll('[data-risk-summary]').forEach((node) => node.remove())
   const grid = [...document.querySelectorAll('main .grid')].find((node) =>
     [...node.querySelectorAll('p,div')].some((item) => /미확정 리스크 금액|전체 최대 잠재손실|위험 경기|위험 건수|진행 중 배팅/.test(item.textContent || '')),
@@ -2341,7 +2374,7 @@ function ensureRiskSummaryCards() {
   if (!grid) return
   const wrap = document.createElement('div')
   wrap.dataset.riskSummary = '1'
-  wrap.dataset.riskReady = '2'
+  wrap.dataset.riskReady = '3'
   wrap.className = 'space-y-3'
   const top = document.createElement('div')
   top.className = 'grid grid-cols-2 gap-2.5'
@@ -2358,6 +2391,8 @@ function ensureRiskSummaryCards() {
   ;[
     ['진행 중 배팅 ( 라이브 )', 'live'],
     ['진행 중 배팅 ( 일반 )', 'sport'],
+    ['진행 중 배팅 ( 라이브 카지노 )', 'casino-live'],
+    ['진행 중 배팅 ( 슬롯 )', 'casino-slot'],
   ].forEach(([title, tone]) => {
     appendStatusZone(zones, title, tone, [
       makeRiskMetricCard('건수', '0건'),
@@ -2374,14 +2409,24 @@ function paintRiskSummary(open, liveNames) {
   const liveBets = open.filter((bet) => marketOf(bet[4], bet[2]).when === '실시간')
   const normalBets = open.filter((bet) => marketOf(bet[4], bet[2]).when !== '실시간')
   const stakeSum = (rows) => rows.reduce((sum, bet) => sum + Number(bet[3] || 0), 0)
+  const casinoStakeSum = (rows) => rows.reduce((sum, bet) => sum + Number(bet.stake || 0), 0)
+  const openCasino = (store().casinoBets || []).filter((bet) => bet.status === '진행 중')
+  const liveCasino = openCasino.filter((bet) => casinoKindOf(bet) === 'live')
+  const slotCasino = openCasino.filter((bet) => casinoKindOf(bet) === 'slot')
   setLabel('미확정 리스크 금액', num(open.reduce((sum, bet) => sum + Math.max(0, Number(bet[5]) - Number(bet[3])), 0)))
   setLabel('진행 중인 라이브 경기 수', countText(liveNames.length, '건'))
   const liveSection = document.querySelector('[data-risk-zones] [data-tone="live"]')
   const normalSection = document.querySelector('[data-risk-zones] [data-tone="sport"]')
+  const liveCasinoSection = document.querySelector('[data-risk-zones] [data-tone="casino-live"]')
+  const slotSection = document.querySelector('[data-risk-zones] [data-tone="casino-slot"]')
   setLabelIn(liveSection, '건수', countText(liveBets.length, '건'))
   setLabelIn(liveSection, '금액', wonText(stakeSum(liveBets)))
   setLabelIn(normalSection, '건수', countText(normalBets.length, '건'))
   setLabelIn(normalSection, '금액', wonText(stakeSum(normalBets)))
+  setLabelIn(liveCasinoSection, '건수', countText(liveCasino.length, '건'))
+  setLabelIn(liveCasinoSection, '금액', wonText(casinoStakeSum(liveCasino)))
+  setLabelIn(slotSection, '건수', countText(slotCasino.length, '건'))
+  setLabelIn(slotSection, '금액', wonText(casinoStakeSum(slotCasino)))
 }
 
 function reshapeRisk() {
