@@ -13,6 +13,15 @@ export class DbService implements OnModuleDestroy {
     if (!url) {
       throw new Error('DATABASE_URL is required');
     }
+    // 야간/로컬 안전장치: 원격 서버 DB는 명시적 허용 없으면 거부
+    if (
+      /211\.110\.16\.130/.test(url) &&
+      process.env.ALLOW_REMOTE_DB !== '1'
+    ) {
+      throw new Error(
+        'Refusing DATABASE_URL to 211.110.16.130 (set ALLOW_REMOTE_DB=1 only for approved ops)',
+      );
+    }
 
     const max = Number(process.env.DATABASE_POOL_MAX || 10);
     this.client = postgres(url, {

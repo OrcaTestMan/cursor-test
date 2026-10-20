@@ -42,7 +42,9 @@ export const MoneyRef = {
   cashWithdrawRestore: 'cash_withdraw_restore',
   betPlace: 'bet_place',
   betWin: 'bet_win',
+  betWinReverse: 'bet_win_reverse',
   betCancel: 'bet_cancel',
+  betCancelReverse: 'bet_cancel_reverse',
   casinoPlace: 'casino_place',
   casinoWin: 'casino_win',
   casinoCancel: 'casino_cancel',
@@ -61,7 +63,20 @@ export class WalletService {
   }
 
   async withTx<T>(fn: (tx: WalletTx) => Promise<T>): Promise<T> {
-    return this.db.transaction(fn)
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await this.db.transaction(fn)
+      } catch (err) {
+        lastErr = err
+        const code =
+          (err as { code?: string })?.code ||
+          (err as { cause?: { code?: string } })?.cause?.code
+        if (code !== '40P01') throw err
+        await new Promise((r) => setTimeout(r, 20 * (attempt + 1)))
+      }
+    }
+    throw lastErr
   }
 
   /** 회원 지갑 행 잠금 */

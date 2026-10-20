@@ -11,8 +11,8 @@ import {
 import { pageParams, type Page } from '../common/pagination.js'
 import { andTokens, searchTokens } from '../common/search-query.js'
 import { DbService } from '../db/db.service.js'
-import { bets, casinoBets, users } from '../db/schema.js'
-import { MoneyRef, WalletService } from '../money/wallet.service.js'
+import { betSettlementEvents, bets, casinoBets, users } from '../db/schema.js'
+import { MoneyRef, WalletService, type WalletTx } from '../money/wallet.service.js'
 import {
   type BetListQueryDto,
   type CasinoBetListQueryDto,
@@ -85,14 +85,18 @@ export class BetsService {
     return row
   }
 
-  /** 스포츠 배팅 접수 → 스테이크 차감 + 원장 */
+  /** 스포츠 배팅 접수 → 스테이크 차감 + 원장 (멱등키 필수) */
   async placeSport(body: PlaceBetDto) {
     const scope = 'bet_place'
-    if (body.idempotencyKey) {
-      const cached = await this.wallet.getIdempotent(scope, body.idempotencyKey)
-      if (cached) return cached.body
+    if (!body.idempotencyKey?.trim()) {
+      throw new BadRequestException('멱등키(idempotencyKey)가 필요합니다.')
     }
+    const cached = await this.wallet.getIdempotent(scope, body.idempotencyKey)
+    if (cached) return cached.body
+
     const result = await this.wallet.withTx(async (tx) => {
+      // 데드락 방지: 회원 행 잠금 → 배팅 INSERT → 원장 (출금과 동일 순서)
+      await this.wallet.lockUser(tx, body.userId)
       const [bet] = await tx
         .insert(bets)
         .values({
@@ -119,46 +123,135 @@ export class BetsService {
       })
       return bet
     })
-    if (body.idempotencyKey) {
-      await this.wallet.saveIdempotent(scope, body.idempotencyKey, 201, result)
-    }
+    await this.wallet.saveIdempotent(scope, body.idempotencyKey, 201, result)
     return result
   }
 
+  /**
+   * 정산·재정산.
+   * 원장 ref_id 는 settlement_event.id (차수마다 신규) → (ref_type,ref_id) 유니크와 충돌 없음.
+   */
   async updateSportStatus(id: number, body: UpdateBetStatusDto) {
     return this.wallet.withTx(async (tx) => {
       const [current] = await tx.select().from(bets).where(eq(bets.id, id))
       if (!current) throw new NotFoundException('배팅을 찾을 수 없습니다.')
-      if (current.status !== '진행 중') {
-        throw new BadRequestException('진행 중 배팅만 정산할 수 있습니다.')
+      if (current.status === body.status) return current
+
+      let moneyDelta = 0
+      // 이전 정산의 머니 효과 되돌리기
+      if (current.status === '적중') {
+        moneyDelta += await this.applySettlementMoney(tx, {
+          bet: current,
+          amount: -current.potentialPayout,
+          reason: '적중회수',
+          refType: MoneyRef.betWinReverse,
+          toStatus: body.status,
+          memo: 'win reverse',
+        })
+      } else if (current.status === '취소') {
+        moneyDelta += await this.applySettlementMoney(tx, {
+          bet: current,
+          amount: -current.stake,
+          reason: '취소회수',
+          refType: MoneyRef.betCancelReverse,
+          toStatus: body.status,
+          memo: 'cancel reverse',
+        })
       }
 
+      // 새 상태 적용
       if (body.status === '적중') {
-        await this.wallet.applyMoney(tx, {
-          userId: current.userId,
+        moneyDelta += await this.applySettlementMoney(tx, {
+          bet: current,
           amount: current.potentialPayout,
           reason: '배팅적중',
           refType: MoneyRef.betWin,
-          refId: current.id,
+          toStatus: body.status,
+          memo: current.status === '진행 중' ? 'settle win' : 'resettle win',
         })
       } else if (body.status === '취소') {
-        // 적특·취소 → 스테이크 환불
-        await this.wallet.applyMoney(tx, {
-          userId: current.userId,
+        moneyDelta += await this.applySettlementMoney(tx, {
+          bet: current,
           amount: current.stake,
           reason: '배팅취소',
           refType: MoneyRef.betCancel,
-          refId: current.id,
+          toStatus: body.status,
+          memo: current.status === '진행 중' ? 'settle void' : 'resettle void',
         })
+      } else if (body.status === '미적중' && current.status === '진행 중') {
+        // 낙첨: 머니 변동 없음, 이력만 (재정산 낙첨은 회수 이벤트만으로 충분)
+        await this.recordSettlementEvent(tx, current, body.status, 0, 'settle lose')
       }
 
+      const [fresh] = await tx.select().from(bets).where(eq(bets.id, id))
       const [updated] = await tx
         .update(bets)
-        .set({ status: body.status, settledAt: new Date() })
+        .set({
+          status: body.status,
+          settledAt: new Date(),
+          settlementRevision: fresh?.settlementRevision ?? current.settlementRevision,
+        })
         .where(eq(bets.id, id))
         .returning()
+      void moneyDelta
       return updated
     })
+  }
+
+  private async recordSettlementEvent(
+    tx: WalletTx,
+    bet: typeof bets.$inferSelect,
+    toStatus: string,
+    moneyDelta: number,
+    memo: string,
+  ) {
+    const revision = bet.settlementRevision + 1
+    const [event] = await tx
+      .insert(betSettlementEvents)
+      .values({
+        betId: bet.id,
+        revision,
+        fromStatus: bet.status,
+        toStatus,
+        moneyDelta,
+        memo,
+      })
+      .returning()
+    await tx
+      .update(bets)
+      .set({ settlementRevision: revision })
+      .where(eq(bets.id, bet.id))
+    bet.settlementRevision = revision
+    return event
+  }
+
+  private async applySettlementMoney(
+    tx: WalletTx,
+    input: {
+      bet: typeof bets.$inferSelect
+      amount: number
+      reason: string
+      refType: string
+      toStatus: string
+      memo: string
+    },
+  ) {
+    const event = await this.recordSettlementEvent(
+      tx,
+      input.bet,
+      input.toStatus,
+      input.amount,
+      input.memo,
+    )
+    await this.wallet.applyMoney(tx, {
+      userId: input.bet.userId,
+      amount: input.amount,
+      reason: input.reason,
+      refType: input.refType,
+      refId: event.id,
+      memo: `bet#${input.bet.id} rev${event.revision}`,
+    })
+    return input.amount
   }
 
   async listCasino(query: CasinoBetListQueryDto): Promise<
@@ -220,6 +313,7 @@ export class BetsService {
       if (cached) return cached.body
     }
     const result = await this.wallet.withTx(async (tx) => {
+      await this.wallet.lockUser(tx, body.userId)
       const [bet] = await tx
         .insert(casinoBets)
         .values({

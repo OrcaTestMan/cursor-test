@@ -83,10 +83,9 @@ export class PlaceBetDto {
   @Min(1)
   potentialPayout!: number
 
-  @IsOptional()
-  @IsString()
+  @IsString({ message: '멱등키(idempotencyKey)가 필요합니다.' })
   @MaxLength(128)
-  idempotencyKey?: string
+  idempotencyKey!: string
 }
 
 export class PlaceCasinoBetDto {

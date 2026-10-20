@@ -153,6 +153,7 @@ export const bets = pgTable(
     potentialPayout: bigint('potential_payout', { mode: 'number' }).notNull(),
     status: betStatus('status').notNull().default('진행 중'),
     matchLive: boolean('match_live').notNull().default(false),
+    settlementRevision: integer('settlement_revision').notNull().default(0),
     placedAt: timestamp('placed_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -162,6 +163,29 @@ export const bets = pgTable(
     index('nex_bets_user_idx').on(t.userId),
     index('nex_bets_status_idx').on(t.status),
     index('nex_bets_match_idx').on(t.matchName),
+  ],
+)
+
+/** 배팅 정산·재정산 이력 — 원장 ref_id 로 사용 (차수마다 새 id) */
+export const betSettlementEvents = pgTable(
+  'nex_bet_settlement_events',
+  {
+    id: serial('id').primaryKey(),
+    betId: integer('bet_id')
+      .notNull()
+      .references(() => bets.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    fromStatus: varchar('from_status', { length: 20 }).notNull(),
+    toStatus: varchar('to_status', { length: 20 }).notNull(),
+    moneyDelta: bigint('money_delta', { mode: 'number' }).notNull().default(0),
+    memo: varchar('memo', { length: 200 }).notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('nex_bet_settle_bet_idx').on(t.betId),
+    uniqueIndex('nex_bet_settle_bet_rev_uidx').on(t.betId, t.revision),
   ],
 )
 
