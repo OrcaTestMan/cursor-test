@@ -274,9 +274,11 @@ function store() {
     }
     if (!data.casinoBets.length) {
       data.casinoBets = [
-        { status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)' },
-        { status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)' },
-        { status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)' },
+        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)' },
+        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)' },
+        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)' },
+        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)' },
+        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)' },
       ]
     }
     if (!data.distSettles.length) {
@@ -292,6 +294,19 @@ function store() {
   if (data.riskSeedApplied !== 1) {
     data.matchStatus['맨체스터 시티 vs 아스널 (t)'] = '라이브'
     data.riskSeedApplied = 1
+    migrated = true
+  }
+  if (data.casinoMemberSeed !== 1) {
+    if (!(data.casinoBets || []).every((bet) => bet.login)) {
+      data.casinoBets = [
+        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)' },
+        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)' },
+        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)' },
+        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)' },
+        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)' },
+      ]
+    }
+    data.casinoMemberSeed = 1
     migrated = true
   }
   deriveUsers(data)
@@ -1577,7 +1592,7 @@ function paintLinked() {
     ;[...data.pointMoves].reverse().forEach((move, index) => {
       const after = running[move.login] ?? 0
       running[move.login] = after - Number(move.amount)
-      const row = linkedRow([data.users[move.login]?.nick || move.login, move.reason || '지급', `${move.amount > 0 ? '+' : ''}${num(move.amount)}`, num(after), '-', move.at || '-'])
+      const row = linkedRow([memberLabel(data.users[move.login]?.nick || move.login, move.login), move.reason || '지급', `${move.amount > 0 ? '+' : ''}${num(move.amount)}`, num(after), '-', move.at || '-'])
       row.dataset.linkedAt = String(Date.now() + index)
       points.tBodies[0].prepend(row)
     })
@@ -2247,6 +2262,13 @@ function riskMoney(value) {
   return `${Number(value || 0).toLocaleString('ko-KR')}원`
 }
 
+function memberLabel(nick, login) {
+  const id = String(login || '').trim()
+  const name = testTag(nick || id || '-')
+  if (!id) return name
+  return `${name} (${id})`
+}
+
 function fillRiskTable(root, title, headers, lines) {
   const heading = [...root.querySelectorAll('h2')].find((item) => item.textContent.trim() === title)
   const table = heading?.closest('section')?.querySelector('table')
@@ -2384,6 +2406,73 @@ function reshapeRisk() {
   }
 }
 
+function openCasinoRiskRows(data) {
+  return (data.casinoBets || [])
+    .filter((bet) => bet.status === '진행 중' && bet.login)
+    .map((bet) => {
+      const stake = Number(bet.stake) || 0
+      const payout = Number(bet.payout) || 0
+      return {
+        login: bet.login,
+        nick: bet.nick || data.users?.[bet.login]?.nick || bet.login,
+        match: bet.name || '카지노',
+        stake,
+        payout,
+        risk: Math.max(0, payout - stake),
+      }
+    })
+}
+
+function riskBucketOf(map, login) {
+  return map.get(login) || { count: 0, stake: 0, risk: 0, nick: login }
+}
+
+function fillRiskMemberTable(section, lines) {
+  const table = section.querySelector('[data-risk-members] table')
+  const head = table?.tHead
+  const body = table?.tBodies[0]
+  if (!head || !body) return
+  const top = document.createElement('tr')
+  const nickHead = document.createElement('th')
+  nickHead.textContent = '닉네임(아이디)'
+  nickHead.rowSpan = 2
+  top.append(nickHead)
+  ;['스포츠', '카지노'].forEach((label) => {
+    const cell = document.createElement('th')
+    cell.textContent = label
+    cell.colSpan = 4
+    top.append(cell)
+  })
+  const sub = document.createElement('tr')
+  ;['스포츠', '카지노'].forEach(() => {
+    ;['건수', '금액', '예상 리스크', '보유머니'].forEach((label) => {
+      const cell = document.createElement('th')
+      cell.textContent = label
+      sub.append(cell)
+    })
+  })
+  head.replaceChildren(top, sub)
+  if (!lines.length) {
+    const row = document.createElement('tr')
+    const cell = document.createElement('td')
+    cell.colSpan = 9
+    cell.textContent = '정산 전 배팅이 없습니다.'
+    row.append(cell)
+    body.replaceChildren(row)
+    return
+  }
+  body.replaceChildren(...lines.map((values) => {
+    const row = document.createElement('tr')
+    values.forEach((value) => {
+      const cell = document.createElement('td')
+      if (value instanceof Node) cell.append(value)
+      else cell.textContent = value
+      row.append(cell)
+    })
+    return row
+  }))
+}
+
 function paintRiskMembers(data, rows) {
   const section = [...document.querySelectorAll('main h2')].find((item) => item.textContent.includes('회원별 리스크'))?.closest('section')
   if (!section) return
@@ -2396,26 +2485,38 @@ function paintRiskMembers(data, rows) {
     const table = document.createElement('table')
     table.className = 'w-full border-collapse text-[13px]'
     table.append(document.createElement('thead'), document.createElement('tbody'))
-    table.tHead.append(document.createElement('tr'))
     host.append(table)
     if (empty) empty.replaceWith(host)
     else section.append(host)
   }
-  const members = groupRiskRows(rows, (row) => row.login).map((row) => {
-    const user = data.users?.[row.login]
+  const sportMap = new Map(groupRiskRows(rows, (row) => row.login).map((row) => [row.login, row]))
+  const casinoMap = new Map(groupRiskRows(openCasinoRiskRows(data), (row) => row.login).map((row) => [row.login, row]))
+  const logins = [...new Set([...sportMap.keys(), ...casinoMap.keys()])]
+  const members = logins.map((login) => {
+    const sport = riskBucketOf(sportMap, login)
+    const casino = riskBucketOf(casinoMap, login)
+    const user = data.users?.[login]
+    const nick = user?.nick || sport.nick || casino.nick || login
+    const money = Number(user?.money || 0)
     return {
-      ...row,
-      nick: user?.nick || row.nick,
-      money: Number(user?.money || 0),
+      login,
+      nick,
+      money,
+      sport,
+      casino,
+      sortRisk: Number(sport.risk || 0) + Number(casino.risk || 0),
+      sortStake: Number(sport.stake || 0) + Number(casino.stake || 0),
     }
-  })
-  fillRiskTable(section, '회원별 리스크 현황', ['회원', '아이디', '건수', '배팅금', '예상 지급', '최대 리스크', '보유 머니'], members.map((row) => [
-    testTag(row.nick),
-    row.login,
-    `${row.count}건`,
-    riskMoney(row.stake),
-    riskMoney(row.payout),
-    riskMoney(row.risk),
+  }).sort((a, b) => b.sortRisk - a.sortRisk || b.sortStake - a.sortStake)
+  fillRiskMemberTable(section, members.map((row) => [
+    memberLabel(row.nick, row.login),
+    `${row.sport.count || 0}건`,
+    riskMoney(row.sport.stake),
+    riskMoney(row.sport.risk),
+    riskMoney(row.money),
+    `${row.casino.count || 0}건`,
+    riskMoney(row.casino.stake),
+    riskMoney(row.casino.risk),
     riskMoney(row.money),
   ]))
 }
@@ -2978,7 +3079,7 @@ function richPage(path, data) {
     const moneySum = Object.values(data.users).reduce((sum, item) => sum + item.money, 0)
     const blocked = Object.values(data.users).filter((item) => item.blocked).length
     const rows = people.map(([login, item]) => `<tr class="border-b border-edge-soft">${cell(item.nick + ' (' + login + ')', 'font-bold')}${cell(gradeOf(item))}${cell(item.money.toLocaleString('ko-KR'), 'text-right font-bold tabular-nums')}${cell(item.points.toLocaleString('ko-KR'), 'text-right tabular-nums')}${cell(item.blocked ? '차단' : '정상')}${cell(item.blockReason || '-')}${cell(`<button type="button" data-user="${login}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">${item.blocked ? '해제' : '차단'}</button>`)}</tr>`).join('')
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('회원', Object.keys(data.users).length + '명')}${stat('보유 머니 합', moneySum.toLocaleString('ko-KR'))}${stat('차단', blocked + '명')}</div>${panel(onlyBlocked ? '블랙리스트' : '회원 관리', `${chips(onlyBlocked ? ['차단', '전체'] : ['전체', '정상', '차단'])}${search('회원 아이디')}${tableWrap(['회원', '등급', '머니', '포인트', '상태', '사유', '관리'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="7">표시할 회원이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('회원', Object.keys(data.users).length + '명')}${stat('보유 머니 합', moneySum.toLocaleString('ko-KR'))}${stat('차단', blocked + '명')}</div>${panel(onlyBlocked ? '블랙리스트' : '회원 관리', `${chips(onlyBlocked ? ['차단', '전체'] : ['전체', '정상', '차단'])}${search('회원 아이디')}${tableWrap(['닉네임(아이디)', '등급', '머니', '포인트', '상태', '사유', '관리'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="7">표시할 회원이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/bets.html')) {
     const placed = data.placedBets.map((bet) => `<tr class="border-b border-edge-soft">${cell(`${testTag(bet.nick)} (${bet.login})`)}${cell(testTag(bet.match))}${cell(testTag(bet.pick))}${cell(Number(bet.stake).toLocaleString('ko-KR'), 'text-right font-bold tabular-nums')}${cell(String(bet.odds), 'text-right')}${cell(Math.round(bet.stake * bet.odds).toLocaleString('ko-KR'), 'text-right text-gold font-bold tabular-nums')}${cell(`<span class="${STATUS_CLASS[bet.status] || ''}">${bet.status}</span>`)}${cell(`<button type="button" data-placed="${bet.id}" data-result="적중" class="mr-1 rounded-md border border-edge px-2 py-1 text-[11px] font-bold">적중</button><button type="button" data-placed="${bet.id}" data-result="미적중" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">미적중</button>`)}</tr>`)
@@ -2987,7 +3088,7 @@ function richPage(path, data) {
       return `<tr class="border-b border-edge-soft">${cell(`${testTag(nick)} (${login})`)}${cell(testTag(match))}${cell('-')}${cell(stake.toLocaleString('ko-KR'), 'text-right font-bold tabular-nums')}${cell(odds, 'text-right')}${cell(win.toLocaleString('ko-KR'), 'text-right text-gold font-bold tabular-nums')}${cell(`<span class="${STATUS_CLASS[current]}">${current}</span>`)}${cell(`<button type="button" data-bet="${index}" data-result="적중" class="mr-1 rounded-md border border-edge px-2 py-1 text-[11px] font-bold">적중</button><button type="button" data-bet="${index}" data-result="미적중" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">미적중</button>`)}</tr>`
     })
     const open = [...data.placedBets, ...BETS.map((item, index) => data.betStatus[index] || item[6])].filter((item) => (item.status || item) === '진행 중').length
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('저장된 베팅', BETS.length + '건')}${stat('새로 접수한 베팅', data.placedBets.length + '건')}${stat('진행 중', open + '건')}</div>${panel('스포츠베팅 내역', `${chips(['전체', '진행 중', '적중', '미적중'])}${search('회원 아이디')}${tableWrap(['회원', '경기', '선택', '베팅금액', '배당', '당첨금', '상태', '정산'], [placed.concat(saved).join('')])}`)}</div>`
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('저장된 베팅', BETS.length + '건')}${stat('새로 접수한 베팅', data.placedBets.length + '건')}${stat('진행 중', open + '건')}</div>${panel('스포츠베팅 내역', `${chips(['전체', '진행 중', '적중', '미적중'])}${search('회원 아이디')}${tableWrap(['닉네임(아이디)', '경기', '선택', '베팅금액', '배당', '당첨금', '상태', '정산'], [placed.concat(saved).join('')])}`)}</div>`
   }
   if (path.endsWith('/matches.html')) {
     const rows = MATCHES.map(([league, name, count, stake]) => {
@@ -3002,8 +3103,8 @@ function richPage(path, data) {
     return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('문의', data.inquiries.length + '건')}${stat('대기', waiting + '건')}</div>${panel('1:1 문의 관리', `${chips(['전체', '대기', '답변'])}${search('제목 검색')}${tableWrap(['제목', '내용', '상태', '답변', '처리'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">문의가 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/points.html')) {
-    const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(data.users[move.login]?.nick || move.login)}${cell(Number(move.amount) > 0 ? '지급' : '회수')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('test 포인트', user.points.toLocaleString('ko-KR') + 'P')}${stat('test123 포인트', data.users.test123.points.toLocaleString('ko-KR') + 'P')}</div>${panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'test', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form>${chips(['전체', '지급', '회수'])}${tableWrap(['회원', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`)}</div>`
+    const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(memberLabel(data.users[move.login]?.nick || move.login, move.login))}${cell(Number(move.amount) > 0 ? '지급' : '회수')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('test 포인트', user.points.toLocaleString('ko-KR') + 'P')}${stat('test123 포인트', data.users.test123.points.toLocaleString('ko-KR') + 'P')}</div>${panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'test', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form>${chips(['전체', '지급', '회수'])}${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/logs.html')) {
     const rows = data.logs.map((item) => `<tr class="border-b border-edge-soft">${cell(item.at, 'text-muted')}${cell(item.text)}</tr>`).join('')
@@ -3011,8 +3112,8 @@ function richPage(path, data) {
   }
   if (path.endsWith('/wallet.html')) {
     const usdt = data.cashExtra.filter((item) => String(item.memo || '').includes('USDT'))
-    const rows = usdt.map((item) => `<tr class="border-b border-edge-soft">${cell(item.nick || item.login)}${cell(item.type)}${cell(Number(item.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item.status)}${cell(item.requestedAt || '-')}</tr>`).join('')
-    return `<div class="space-y-4">${note()}${panel('USDT 설정', `<form data-wallet-form class="grid max-w-xl gap-3">${field('네트워크', data.wallet.network || 'TRC-20', 'network')}${field('지갑 주소', data.wallet.address, 'address')}${field('환율', data.wallet.rate || '1450', 'rate')}${field('최소 USDT', data.wallet.min || '10', 'min')}${field('메모', data.wallet.note, 'note')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">저장</button></form>`)}${panel('USDT 신청', tableWrap(['회원', '유형', '금액', '상태', '시각'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">USDT 신청이 없습니다.</td></tr>']))}</div>`
+    const rows = usdt.map((item) => `<tr class="border-b border-edge-soft">${cell(memberLabel(item.nick || item.login, item.login))}${cell(item.type)}${cell(Number(item.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item.status)}${cell(item.requestedAt || '-')}</tr>`).join('')
+    return `<div class="space-y-4">${note()}${panel('USDT 설정', `<form data-wallet-form class="grid max-w-xl gap-3">${field('네트워크', data.wallet.network || 'TRC-20', 'network')}${field('지갑 주소', data.wallet.address, 'address')}${field('환율', data.wallet.rate || '1450', 'rate')}${field('최소 USDT', data.wallet.min || '10', 'min')}${field('메모', data.wallet.note, 'note')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">저장</button></form>`)}${panel('USDT 신청', tableWrap(['닉네임(아이디)', '유형', '금액', '상태', '시각'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">USDT 신청이 없습니다.</td></tr>']))}</div>`
   }
   if (path.endsWith('/banners.html')) {
     const rows = data.banners.map((item, index) => `<tr class="border-b border-edge-soft">${cell(item.title, 'font-bold')}${cell(item.on ? '노출' : '숨김')}${cell(`<button type="button" data-banner="${index}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">${item.on ? '숨김' : '노출'}</button>`)}</tr>`).join('')
@@ -3020,8 +3121,8 @@ function richPage(path, data) {
   }
   if (path.endsWith('/settle-audit.html')) {
     const deposits = data.cashExtra.filter((item) => item.type === '입금' && item.status === '승인').reduce((sum, item) => sum + Number(item.amount), 0)
-    const rows = Object.entries(data.users).map(([login, item]) => `<tr class="border-b border-edge-soft">${cell(login, 'font-bold')}${cell((BASE_USERS[login]?.money || 0).toLocaleString('ko-KR'), 'text-right')}${cell(item.money.toLocaleString('ko-KR'), 'text-right font-bold')}${cell((item.money - (BASE_USERS[login]?.money || 0)).toLocaleString('ko-KR'), 'text-right')}</tr>`).join('')
-    return `<div class="space-y-4">${note()}${panel('정산 대조 점검', `<p class="text-sm text-dim">추가 승인 입금과 회원별 기준 머니 대비 현재 머니를 대조합니다.</p><button type="button" data-audit class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">대조 실행</button><p data-audit-result class="text-sm font-bold text-fg">추가 승인 입금 ${deposits.toLocaleString('ko-KR')}</p>${tableWrap(['회원', '기준 머니', '현재 머니', '차이'], [rows])}`)}</div>`
+    const rows = Object.entries(data.users).map(([login, item]) => `<tr class="border-b border-edge-soft">${cell(memberLabel(item.nick, login), 'font-bold')}${cell((BASE_USERS[login]?.money || 0).toLocaleString('ko-KR'), 'text-right')}${cell(item.money.toLocaleString('ko-KR'), 'text-right font-bold')}${cell((item.money - (BASE_USERS[login]?.money || 0)).toLocaleString('ko-KR'), 'text-right')}</tr>`).join('')
+    return `<div class="space-y-4">${note()}${panel('정산 대조 점검', `<p class="text-sm text-dim">추가 승인 입금과 회원별 기준 머니 대비 현재 머니를 대조합니다.</p><button type="button" data-audit class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">대조 실행</button><p data-audit-result class="text-sm font-bold text-fg">추가 승인 입금 ${deposits.toLocaleString('ko-KR')}</p>${tableWrap(['닉네임(아이디)', '기준 머니', '현재 머니', '차이'], [rows])}`)}</div>`
   }
   if (path.endsWith('/casino.html')) {
     const rows = data.casinoVisits.map((item) => `<tr class="border-b border-edge-soft">${cell(item.name, 'font-bold')}${cell('로비')}${cell('0', 'text-right')}${cell(item.at)}</tr>`).join('')
@@ -3097,14 +3198,14 @@ function renderPlaceholder() {
       const current = data.betStatus[index] || status
       return `<tr class="border-b border-edge-soft">${cell(`${nick} (${login})`)}${cell(match)}${cell(stake.toLocaleString('ko-KR'), 'text-right font-bold tabular-nums')}${cell(odds, 'text-right')}${cell(win.toLocaleString('ko-KR'), 'text-right text-gold font-bold tabular-nums')}${cell(`<span class="${STATUS_CLASS[current]}">${current}</span>`)}${cell(`<button type="button" data-bet="${index}" data-result="적중" class="mr-1 rounded-md border border-edge px-2 py-1 text-[11px] font-bold">적중</button><button type="button" data-bet="${index}" data-result="미적중" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">미적중</button>`)}</tr>`
     }).join('')
-    replacePlaceholder(panel('스포츠베팅 내역', `<div class="flex flex-wrap gap-2"><button type="button" class="rounded-lg bg-accent-soft px-3 py-1.5 text-xs font-bold text-accent">전체</button><button type="button" class="rounded-lg px-3 py-1.5 text-xs font-bold text-dim">진행 중</button><button type="button" class="rounded-lg px-3 py-1.5 text-xs font-bold text-dim">적중</button><button type="button" class="rounded-lg px-3 py-1.5 text-xs font-bold text-dim">미적중</button><input data-table-search placeholder="회원, 경기 검색" class="h-9 w-52 rounded-lg border border-edge bg-input px-3 text-sm"></div>${tableWrap(['회원', '경기', '베팅금액', '배당', '당첨금', '상태', '정산'], [rows])}`))
+    replacePlaceholder(panel('스포츠베팅 내역', `<div class="flex flex-wrap gap-2"><button type="button" class="rounded-lg bg-accent-soft px-3 py-1.5 text-xs font-bold text-accent">전체</button><button type="button" class="rounded-lg px-3 py-1.5 text-xs font-bold text-dim">진행 중</button><button type="button" class="rounded-lg px-3 py-1.5 text-xs font-bold text-dim">적중</button><button type="button" class="rounded-lg px-3 py-1.5 text-xs font-bold text-dim">미적중</button><input data-table-search placeholder="회원, 경기 검색" class="h-9 w-52 rounded-lg border border-edge bg-input px-3 text-sm"></div>${tableWrap(['닉네임(아이디)', '경기', '베팅금액', '배당', '당첨금', '상태', '정산'], [rows])}`))
     return true
   }
   if (path.endsWith('/users.html') || path.endsWith('/blacklist.html')) {
     const onlyBlocked = path.endsWith('/blacklist.html')
     const people = Object.entries(data.users).filter(([, user]) => (onlyBlocked ? user.blocked : true))
     const rows = people.map(([login, user]) => `<tr class="border-b border-edge-soft">${cell(user.nick + ' (' + login + ')', 'font-bold')}${cell(user.money.toLocaleString('ko-KR'), 'text-right tabular-nums')}${cell(user.points.toLocaleString('ko-KR'), 'text-right tabular-nums')}${cell(user.blocked ? '차단' : '정상')}${cell(`<button type="button" data-user="${login}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">${user.blocked ? '해제' : '차단'}</button>`)}</tr>`).join('')
-    replacePlaceholder(panel(onlyBlocked ? '블랙리스트' : '회원 관리', `<input data-table-search placeholder="아이디, 닉네임 검색" class="h-9 w-56 rounded-lg border border-edge bg-input px-3 text-sm">${tableWrap(['회원', '머니', '포인트', '상태', '관리'], [rows || `<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">${onlyBlocked ? '차단된 회원이 없습니다.' : '회원이 없습니다.'}</td></tr>`])}`))
+    replacePlaceholder(panel(onlyBlocked ? '블랙리스트' : '회원 관리', `<input data-table-search placeholder="아이디, 닉네임 검색" class="h-9 w-56 rounded-lg border border-edge bg-input px-3 text-sm">${tableWrap(['닉네임(아이디)', '머니', '포인트', '상태', '관리'], [rows || `<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">${onlyBlocked ? '차단된 회원이 없습니다.' : '회원이 없습니다.'}</td></tr>`])}`))
     return true
   }
   if (path.endsWith('/inquiries.html')) {
@@ -3113,8 +3214,8 @@ function renderPlaceholder() {
     return true
   }
   if (path.endsWith('/points.html')) {
-    const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(data.users[move.login]?.nick || move.login)}${cell(move.reason || '지급')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
-    replacePlaceholder(panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'test', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form><div class="text-sm text-dim">테스트유저 ${data.users.test.points.toLocaleString('ko-KR')}P · 테스트용 ${data.users.test123.points.toLocaleString('ko-KR')}P</div>${tableWrap(['회원', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`))
+    const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(memberLabel(data.users[move.login]?.nick || move.login, move.login))}${cell(move.reason || '지급')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
+    replacePlaceholder(panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'test', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form><div class="text-sm text-dim">테스트유저 ${data.users.test.points.toLocaleString('ko-KR')}P · 테스트용 ${data.users.test123.points.toLocaleString('ko-KR')}P</div>${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`))
     return true
   }
   if (path.endsWith('/logs.html')) {
@@ -3138,7 +3239,7 @@ function renderPlaceholder() {
   }
   if (path.endsWith('/casino.html')) {
     const rows = BETS.map(([login, nick, match, stake], index) => `<tr class="border-b border-edge-soft">${cell(`${nick} (${login})`)}${cell('카지노')}${cell(stake.toLocaleString('ko-KR'), 'text-right font-bold tabular-nums')}${cell(data.betStatus['c' + index] || '진행 중')}</tr>`).join('')
-    replacePlaceholder(panel('카지노 내역', `<input data-table-search placeholder="회원 검색" class="h-9 w-52 rounded-lg border border-edge bg-input px-3 text-sm">${tableWrap(['회원', '종류', '금액', '상태'], [rows])}`))
+    replacePlaceholder(panel('카지노 내역', `<input data-table-search placeholder="회원 검색" class="h-9 w-52 rounded-lg border border-edge bg-input px-3 text-sm">${tableWrap(['닉네임(아이디)', '종류', '금액', '상태'], [rows])}`))
     return true
   }
   if (path.endsWith('/home.html')) {
