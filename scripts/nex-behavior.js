@@ -2432,22 +2432,32 @@ function fillRiskMemberTable(section, lines) {
   const head = table?.tHead
   const body = table?.tBodies[0]
   if (!head || !body) return
+  const sportBg = 'rgba(34, 224, 122, 0.10)'
+  const casinoBg = 'rgba(59, 130, 246, 0.10)'
+  const tint = (cell, kind) => {
+    cell.style.background = kind === 'sport' ? sportBg : casinoBg
+  }
   const top = document.createElement('tr')
   const nickHead = document.createElement('th')
   nickHead.textContent = '닉네임(아이디)'
   nickHead.rowSpan = 2
   top.append(nickHead)
-  ;['스포츠', '카지노'].forEach((label) => {
+  ;[
+    ['스포츠', 'sport'],
+    ['카지노', 'casino'],
+  ].forEach(([label, kind]) => {
     const cell = document.createElement('th')
     cell.textContent = label
     cell.colSpan = 4
+    tint(cell, kind)
     top.append(cell)
   })
   const sub = document.createElement('tr')
-  ;['스포츠', '카지노'].forEach(() => {
+  ;['sport', 'casino'].forEach((kind) => {
     ;['건수', '금액', '예상 리스크', '보유머니'].forEach((label) => {
       const cell = document.createElement('th')
       cell.textContent = label
+      tint(cell, kind)
       sub.append(cell)
     })
   })
@@ -2463,10 +2473,12 @@ function fillRiskMemberTable(section, lines) {
   }
   body.replaceChildren(...lines.map((values) => {
     const row = document.createElement('tr')
-    values.forEach((value) => {
+    values.forEach((value, index) => {
       const cell = document.createElement('td')
       if (value instanceof Node) cell.append(value)
       else cell.textContent = value
+      if (index >= 1 && index <= 4) tint(cell, 'sport')
+      if (index >= 5 && index <= 8) tint(cell, 'casino')
       row.append(cell)
     })
     return row
