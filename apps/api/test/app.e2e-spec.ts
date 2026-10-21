@@ -10,7 +10,7 @@ import { AuthService } from './../src/auth/auth.service.js'
 import { IDLE_MS } from './../src/auth/auth.constants.js'
 import { migrateOnBoot } from './../src/db/migrate-on-boot.js'
 import { DbService } from './../src/db/db.service.js'
-import { admins, auditLogs } from './../src/db/schema.js'
+import { adminAuditLogs, admins, auditLogs } from './../src/db/schema.js'
 import { eq } from 'drizzle-orm'
 import { setupApp } from './../src/setup-app.js'
 
@@ -300,24 +300,56 @@ describe.sequential('관리자 세션 (e2e)', () => {
     expect(res.status).toBe(403)
   })
 
-  it('로그인 실패 5회면 잠긴다', async () => {
-    const suffix = `lock-${Date.now()}`
-    const locked = await seedAdmin(app, 'operator', suffix)
+  it('기본은 잠금 없고 실패는 감사 로그에 남는다', async () => {
+    const suffix = `nolock-${Date.now()}`
+    const target = await seedAdmin(app, 'operator', suffix)
     for (let i = 0; i < 5; i += 1) {
       const res = await request(app.getHttpServer()).post('/api/auth/login').send({
-        login: locked.login,
+        login: target.login,
         password: 'wrong-password',
         totp: '000000',
       })
       expect(res.status).toBe(401)
+      expect(String(res.body.message)).not.toMatch(/잠/)
     }
+    const fails = await app.get(DbService).db
+      .select({ action: adminAuditLogs.action, login: adminAuditLogs.login })
+      .from(adminAuditLogs)
+      .where(eq(adminAuditLogs.login, target.login))
+    expect(fails.filter((row) => row.action === 'login_fail').length).toBe(5)
     const again = await request(app.getHttpServer()).post('/api/auth/login').send({
-      login: locked.login,
-      password: locked.password,
-      totp: locked.totp(),
+      login: target.login,
+      password: target.password,
+      totp: target.totp(),
     })
-    expect(again.status).toBe(401)
-    expect(String(again.body.message)).toMatch(/잠/)
+    expect(again.status).toBe(200)
+  })
+
+  it('ADMIN_LOGIN_LOCKOUT=1 이면 5회 실패 후 잠긴다', async () => {
+    const prev = process.env.ADMIN_LOGIN_LOCKOUT
+    process.env.ADMIN_LOGIN_LOCKOUT = '1'
+    try {
+      const suffix = `lock-${Date.now()}`
+      const locked = await seedAdmin(app, 'operator', suffix)
+      for (let i = 0; i < 5; i += 1) {
+        const res = await request(app.getHttpServer()).post('/api/auth/login').send({
+          login: locked.login,
+          password: 'wrong-password',
+          totp: '000000',
+        })
+        expect(res.status).toBe(401)
+      }
+      const again = await request(app.getHttpServer()).post('/api/auth/login').send({
+        login: locked.login,
+        password: locked.password,
+        totp: locked.totp(),
+      })
+      expect(again.status).toBe(401)
+      expect(String(again.body.message)).toMatch(/잠/)
+    } finally {
+      if (prev === undefined) delete process.env.ADMIN_LOGIN_LOCKOUT
+      else process.env.ADMIN_LOGIN_LOCKOUT = prev
+    }
   })
 
   it('유휴 30분이 지나면 세션이 끊긴다', async () => {

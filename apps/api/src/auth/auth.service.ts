@@ -26,6 +26,7 @@ import {
   OTP_SETTING_KEY,
   SESSION_COOKIE,
   cookieSecure,
+  loginLockoutEnabled,
 } from './auth.constants.js'
 
 export type AdminActor = {
@@ -139,7 +140,11 @@ export class AuthService {
     }
 
     const now = this.now()
-    if (admin.lockedUntil && admin.lockedUntil.getTime() > now) {
+    if (
+      loginLockoutEnabled() &&
+      admin.lockedUntil &&
+      admin.lockedUntil.getTime() > now
+    ) {
       await this.audit('login_fail', { adminId: admin.id, login, ip, userAgent })
       throw new UnauthorizedException(
         '로그인이 잠겼습니다. 잠시 뒤 다시 시도해 주세요.',
@@ -159,7 +164,9 @@ export class AuthService {
     if (!passOk || !totpOk) {
       const attempts = admin.failedAttempts + 1
       const lockedUntil =
-        attempts >= FAIL_LIMIT ? new Date(now + LOCK_MS) : null
+        loginLockoutEnabled() && attempts >= FAIL_LIMIT
+          ? new Date(now + LOCK_MS)
+          : null
       await this.db
         .update(admins)
         .set({
