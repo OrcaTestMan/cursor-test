@@ -51,27 +51,29 @@ function scanFile(target) {
   return collect(text, path.relative(ROOT, target).replace(/\\/g, '/'))
 }
 
-function knownHits() {
-  const known = new Set()
+function originDevText() {
   const files = [
     'apps/web/public/nex/nex-behavior.js',
     'scripts/nex-behavior.js',
   ]
-  for (const rel of files) {
+  return files.map((rel) => {
     try {
-      const text = execFileSync('git', ['show', `origin/dev:${rel}`], { encoding: 'utf8' })
-      collect(text, rel).forEach((hit) => known.add(hit.replace(/^[^:]+:\d+:/, '')))
+      return execFileSync('git', ['show', `origin/dev:${rel}`], { encoding: 'utf8' })
     } catch {
-      // origin/dev 에 없는 파일은 전부 신규로 본다
+      return ''
     }
-  }
-  return known
+  }).join('\n')
+}
+
+function alreadyOnDev(hit, blob) {
+  const body = hit.replace(/^[^:]+:\d+:\s*/, '').replace(/^'|',$/g, '')
+  return blob.includes(body.slice(0, 80))
 }
 
 const hits = []
 for (const item of SCAN) hits.push(...scanFile(item))
-const known = knownHits()
-const fresh = hits.filter((hit) => !known.has(hit.replace(/^[^:]+:\d+:/, '')))
+const blob = originDevText()
+const fresh = hits.filter((hit) => !alreadyOnDev(hit, blob))
 
 if (fresh.length) {
   console.error(`nex-table check failed (${fresh.length})`)
