@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NEX 표 견본</title>
+  <link rel="stylesheet" href="/nex/nex-table.css">
+  <style>
+    body { margin: 0; background: #131517; color: #f2f4f6; font-family: ui-sans-serif, system-ui, sans-serif; }
+    main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 48px; }
+    h1 { margin: 0 0 8px; font-size: 20px; }
+    .lead { margin: 0 0 28px; color: #9aa3ad; font-size: 13px; }
+    .card { margin: 0 0 22px; padding: 14px 16px 16px; background: #191c1f; border: 1px solid #2e343a; }
+    h2 { margin: 0 0 12px; font-size: 15px; text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>표 견본</h1>
+    <p class="lead">A는 글자 사이 간격이 같고 열이 맞습니다. B는 칸 종류별 폭을 고정하고, 좁으면 표만 가로로 스크롤합니다.</p>
+
+    <section class="card">
+      <h2>A. 총판 라인별 환전 합계</h2>
+      <div class="nex-board" data-cols="4">
+        <div class="nex-board-row nex-board-head">
+          <span class="nex-col-rank">순위</span>
+          <span class="nex-col-text">항목</span>
+          <span class="nex-col-count">건수</span>
+          <span class="nex-col-money">금액</span>
+        </div>
+        <div class="nex-board-row">
+          <span class="nex-col-rank">01</span>
+          <span class="nex-col-text">A라인</span>
+          <span class="nex-col-count">3건</span>
+          <span class="nex-col-money">120,000원</span>
+        </div>
+        <div class="nex-board-row">
+          <span class="nex-col-rank">02</span>
+          <span class="nex-col-text">B라인</span>
+          <span class="nex-col-count">1건</span>
+          <span class="nex-col-money">80,000원</span>
+        </div>
+        <div class="nex-board-row">
+          <span class="nex-col-rank">03</span>
+          <span class="nex-col-text">C라인</span>
+          <span class="nex-col-count">1건</span>
+          <span class="nex-col-money">45,000원</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>A. 적자 회원</h2>
+      <div class="nex-board" data-cols="3">
+        <div class="nex-board-row nex-board-head">
+          <span class="nex-col-rank">순위</span>
+          <span class="nex-col-text">항목</span>
+          <span class="nex-col-money">금액</span>
+        </div>
+        <div class="nex-board-row">
+          <span class="nex-col-rank">01</span>
+          <span class="nex-col-text">이수민 (leesu)</span>
+          <span class="nex-col-money">61,424원</span>
+        </div>
+        <div class="nex-board-row">
+          <span class="nex-col-rank">02</span>
+          <span class="nex-col-text">윤아현 (yoonah)</span>
+          <span class="nex-col-money">22,000원</span>
+        </div>
+        <div class="nex-board-row">
+          <span class="nex-col-rank">03</span>
+          <span class="nex-col-text">강서준 (kangst)</span>
+          <span class="nex-col-money">18,500원</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>B. 거래 목록</h2>
+      <div class="nex-list-wrap">
+        <table class="nex-list" data-kind="bets">
+          <thead>
+            <tr>
+              <th class="nex-col-rank">번호</th>
+              <th class="nex-col-date">날짜</th>
+              <th class="nex-col-text">항목</th>
+              <th class="nex-col-status">상태</th>
+              <th class="nex-col-count">건수</th>
+              <th class="nex-col-money">금액</th>
+              <th class="nex-col-action">확인</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="nex-col-rank">01</td>
+              <td class="nex-col-date">2026-10-21</td>
+              <td class="nex-col-text">스포츠 충전</td>
+              <td class="nex-col-status">승인</td>
+              <td class="nex-col-count">4</td>
+              <td class="nex-col-money" data-tone="up">300,000원</td>
+              <td class="nex-col-action">보기</td>
+            </tr>
+            <tr>
+              <td class="nex-col-rank">02</td>
+              <td class="nex-col-date">2026-10-20</td>
+              <td class="nex-col-text">카지노 환전</td>
+              <td class="nex-col-status">대기</td>
+              <td class="nex-col-count">1</td>
+              <td class="nex-col-money" data-tone="down">80,000원</td>
+              <td class="nex-col-action">보기</td>
+            </tr>
+            <tr>
+              <td class="nex-col-rank">03</td>
+              <td class="nex-col-date">2026-10-19</td>
+              <td class="nex-col-text">미니게임 정산</td>
+              <td class="nex-col-status">거절</td>
+              <td class="nex-col-count">2</td>
+              <td class="nex-col-money">12,400원</td>
+              <td class="nex-col-action">보기</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>B. 회원 목록</h2>
+      <div class="nex-list-wrap">
+        <table class="nex-list" data-kind="users">
+          <thead>
+            <tr>
+              <th class="nex-col-rank">번호</th>
+              <th class="nex-col-text">닉네임</th>
+              <th class="nex-col-text">아이디</th>
+              <th class="nex-col-status">상태</th>
+              <th class="nex-col-money">보유머니</th>
+              <th class="nex-col-date">가입일</th>
+              <th class="nex-col-action">관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="nex-col-rank">01</td>
+              <td class="nex-col-text">이수민</td>
+              <td class="nex-col-text">leesu</td>
+              <td class="nex-col-status">정상</td>
+              <td class="nex-col-money">1,250,000원</td>
+              <td class="nex-col-date">2026-03-12</td>
+              <td class="nex-col-action">열기</td>
+            </tr>
+            <tr>
+              <td class="nex-col-rank">02</td>
+              <td class="nex-col-text">윤아현</td>
+              <td class="nex-col-text">yoonah</td>
+              <td class="nex-col-status">정지</td>
+              <td class="nex-col-money">80,000원</td>
+              <td class="nex-col-date">2026-05-02</td>
+              <td class="nex-col-action">열기</td>
+            </tr>
+            <tr>
+              <td class="nex-col-rank">03</td>
+              <td class="nex-col-text">강서준</td>
+              <td class="nex-col-text">kangst</td>
+              <td class="nex-col-status">정상</td>
+              <td class="nex-col-money">375,000원</td>
+              <td class="nex-col-date">2026-07-18</td>
+              <td class="nex-col-action">열기</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

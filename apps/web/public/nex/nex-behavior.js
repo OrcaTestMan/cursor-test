@@ -14,6 +14,7 @@
         if (name) {
           name.innerHTML = `${me.nick}<span class="font-normal text-muted">(${me.login})</span>`
         }
+        mountHeaderOtp(me)
         mountSettingsOtp(me)
         document.querySelectorAll('aside button').forEach((btn) => {
           if (!/로그아웃/.test(btn.textContent || '')) return
@@ -53,7 +54,6 @@ function otpToggleClass(active) {
 function paintOtpToggle(root, required) {
   const on = root.querySelector('[data-otp="on"]')
   const off = root.querySelector('[data-otp="off"]')
-  const confirm = root.querySelector('[data-otp-confirm]')
   if (on) {
     on.setAttribute('aria-pressed', required ? 'true' : 'false')
     on.className = otpToggleClass(required)
@@ -62,20 +62,11 @@ function paintOtpToggle(root, required) {
     off.setAttribute('aria-pressed', required ? 'false' : 'true')
     off.className = otpToggleClass(!required)
   }
-  if (confirm) confirm.hidden = !required
 }
 
-function mountSettingsOtp(me) {
-  document.querySelectorAll('header [data-otp-toggle], [data-otp-toggle]').forEach((el) => el.remove())
-  if (!/\/nex\/settings\.html$/i.test(location.pathname)) return
-  if (me?.role !== 'superadmin') return
-  const box = document.querySelector('main .space-y-4')
-  if (!box || box.querySelector('[data-otp-settings]')) return
-  const card = document.createElement('section')
-  card.dataset.otpSettings = '1'
-  card.className = 'bg-card border border-edge rounded-xl overflow-hidden'
-  card.innerHTML = `<div class="flex items-center justify-between gap-3 border-b border-edge-soft px-4 py-3"><h2 class="text-sm font-bold text-fg">관리자 로그인 OTP</h2></div><div class="space-y-3 p-4"><p class="text-sm text-dim">최고관리자만 바꿀 수 있습니다. 끄려면 현재 OTP 6자리를 다시 입력합니다.</p><div class="flex h-10 items-center gap-1 rounded-full border border-edge px-1" role="group" aria-label="OTP"><button type="button" data-otp="on" aria-pressed="true" class="${otpToggleClass(true)}">on</button><button type="button" data-otp="off" aria-pressed="false" class="${otpToggleClass(false)}">off</button></div><label data-otp-confirm hidden class="block max-w-xs"><span class="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-muted">OTP 6자리</span><input data-otp-totp inputmode="numeric" autocomplete="one-time-code" maxlength="6" class="h-10 w-full rounded-lg border border-edge bg-input px-3 text-sm font-bold text-fg" /></label></div>`
-  box.prepend(card)
+function bindOtpControls(root) {
+  if (!root || root.dataset.otpBound === '1') return
+  root.dataset.otpBound = '1'
   fetch('/api/auth/otp', { credentials: 'include' })
     .then(async (res) => {
       if (redirectIfAuthLost(res)) return
@@ -84,22 +75,18 @@ function mountSettingsOtp(me) {
     })
     .then((data) => {
       if (!data) return
-      paintOtpToggle(card, data.required !== false)
+      paintOtpToggle(root, data.required !== false)
     })
     .catch(() => toast('데이터를 불러오지 못했습니다'))
-  card.addEventListener('click', async (event) => {
+  root.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-otp]')
     if (!button) return
     const required = button.dataset.otp === 'on'
-    const totp = card.querySelector('[data-otp-totp]')
     const res = await fetch('/api/auth/otp', {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        required,
-        totp: required ? undefined : String(totp?.value || '').trim(),
-      }),
+      body: JSON.stringify({ required }),
     })
     if (!res.ok) {
       if (redirectIfAuthLost(res)) return
@@ -108,10 +95,40 @@ function mountSettingsOtp(me) {
       return
     }
     const data = await res.json()
-    paintOtpToggle(card, data.required !== false)
-    if (totp) totp.value = ''
+    paintOtpToggle(root, data.required !== false)
     toast(data.required ? 'OTP on' : 'OTP off')
   })
+}
+
+function mountHeaderOtp(me) {
+  document.querySelectorAll('header [data-otp-toggle]').forEach((el) => el.remove())
+  if (me?.role !== 'superadmin') return
+  const lang = document.querySelector('header [aria-label^="팀명 언어"]')
+  const bar = lang?.parentElement || document.querySelector('header .flex.items-center.gap-2\\.5') || document.querySelector('header')
+  if (!bar) return
+  const group = document.createElement('div')
+  group.dataset.otpToggle = '1'
+  group.className = 'flex h-9 shrink-0 items-center rounded-full border border-info bg-info/10 pl-2.5 pr-1 gap-1'
+  group.setAttribute('role', 'group')
+  group.setAttribute('aria-label', 'OTP')
+  group.title = '관리자 로그인 구글 OTP. on이면 코드 필수, off면 아이디·비밀번호만.'
+  group.innerHTML = `<span class="pr-1 text-[12px] font-black text-fg" aria-hidden="true">OTP</span><button type="button" data-otp="on" aria-pressed="true" class="${otpToggleClass(true)}">on</button><button type="button" data-otp="off" aria-pressed="false" class="${otpToggleClass(false)}">off</button>`
+  if (lang) bar.insertBefore(group, lang)
+  else bar.prepend(group)
+  bindOtpControls(group)
+}
+
+function mountSettingsOtp(me) {
+  if (!/\/nex\/settings\.html$/i.test(location.pathname)) return
+  if (me?.role !== 'superadmin') return
+  const box = document.querySelector('main .space-y-4')
+  if (!box || box.querySelector('[data-otp-settings]')) return
+  const card = document.createElement('section')
+  card.dataset.otpSettings = '1'
+  card.className = 'bg-card border border-edge rounded-xl overflow-hidden'
+  card.innerHTML = `<div class="flex items-center justify-between gap-3 border-b border-edge-soft px-4 py-3"><h2 class="text-sm font-bold text-fg">관리자 로그인 OTP</h2></div><div class="space-y-3 p-4"><p class="text-sm text-dim">최고관리자만 바꿀 수 있습니다. off면 다음 로그인부터 인증 코드 없이 들어갑니다.</p><div class="flex h-10 items-center gap-1 rounded-full border border-edge px-1" role="group" aria-label="OTP"><button type="button" data-otp="on" aria-pressed="true" class="${otpToggleClass(true)}">on</button><button type="button" data-otp="off" aria-pressed="false" class="${otpToggleClass(false)}">off</button></div></div>`
+  box.prepend(card)
+  bindOtpControls(card)
 }
 
 const STORE_KEY = 'nex-ops-state-v1'
@@ -192,13 +209,13 @@ const BET_MARKETS = {
 }
 
 const BASE_USERS = {
-  leesu: { nick: '이수민', money: 250000, points: 0, blocked: false },
-  yoonah: { nick: '윤아현', money: 251000, points: 0, blocked: false },
-  kangst: { nick: '강서준', money: 252000, points: 200, blocked: false },
-  hansy: { nick: '한소연', money: 0, points: 0, blocked: true, blockReason: '중복 계정' },
-  seojw: { nick: '서준우', money: 253000, points: 50, blocked: false },
-  parkdh: { nick: '박도현', money: 200000, points: 0, blocked: false },
-  kimjs: { nick: '김지성', money: 500000, points: 0, blocked: false },
+  leesu: { nick: '이수민', money: 250000, casinoMoney: 80000, points: 0, blocked: false },
+  yoonah: { nick: '윤아현', money: 251000, casinoMoney: 60000, points: 0, blocked: false },
+  kangst: { nick: '강서준', money: 252000, casinoMoney: 40000, points: 200, blocked: false },
+  hansy: { nick: '한소연', money: 0, casinoMoney: 0, points: 0, blocked: true, blockReason: '중복 계정' },
+  seojw: { nick: '서준우', money: 253000, casinoMoney: 25000, points: 50, blocked: false },
+  parkdh: { nick: '박도현', money: 200000, casinoMoney: 20000, points: 0, blocked: false },
+  kimjs: { nick: '김지성', money: 500000, casinoMoney: 150000, points: 0, blocked: false },
 }
 
 const CAPTURED_CASH = {
@@ -244,11 +261,12 @@ function deriveUsers(data) {
       blocked: current.blocked != null ? Boolean(current.blocked) : Boolean(base.blocked),
       blockReason: testTag(current.blockReason || base.blockReason || '') || '',
       money: base.money,
+      casinoMoney: Number(base.casinoMoney || 0),
       points: base.points,
     }
   })
   Object.entries(saved).forEach(([login, current]) => {
-    if (!users[login]) users[login] = { nick: current.nick || login, blocked: Boolean(current.blocked), blockReason: current.blockReason || '', money: 0, points: 0 }
+    if (!users[login]) users[login] = { nick: current.nick || login, blocked: Boolean(current.blocked), blockReason: current.blockReason || '', money: 0, casinoMoney: Number(current.casinoMoney || 0), points: 0 }
   })
   Object.entries(CAPTURED_CASH).forEach(([id, row]) => {
     const status = data.cashStatus[id] || row.status
@@ -929,7 +947,6 @@ function settleSectionBody(title, options = {}) {
     const host = section.querySelector('.p-4') || section
     ;[...host.children].forEach((node) => {
       if (node.dataset?.settleSample) return
-      if (node.tagName === 'P' && /정산 기준/.test(node.textContent)) return
       node.remove()
     })
     body = document.createElement('div')
@@ -946,6 +963,8 @@ function paintSettleMixChart(title, rows, centerLabel) {
   if (!body) return
   body.textContent = ''
   body.dataset.settleMix = '1'
+  body.classList.remove('nex-board')
+  delete body.dataset.cols
   const total = rows.reduce((sum, row) => sum + Number(row.value || 0), 0)
   const wrap = document.createElement('div')
   wrap.dataset.settleMixWrap = '1'
@@ -1020,7 +1039,7 @@ function paintSettleSampleRows(title, rows, options = {}) {
   if (!body) return
   body.textContent = ''
   delete body.dataset.settleMix
-  body.dataset.settleList = '1'
+  delete body.dataset.settleList
   const limit = Number(options.limit)
   const shown = Number.isFinite(limit) && limit > 0
     ? rows.slice(0, limit)
@@ -1036,40 +1055,44 @@ function paintSettleSampleRows(title, rows, options = {}) {
   const showRank = options.rank !== false
   const hasMeta = options.meta !== false && shown.some((row) => Boolean(row.sub))
   const amountOf = options.amountUnit === '만' ? manText : wonText
-  const head = document.createElement('div')
-  head.dataset.settleListHead = '1'
-  if (hasMeta) head.dataset.withMeta = '1'
-  if (!showRank) head.dataset.plain = '1'
+  delete body.dataset.settleList
+  body.classList.add('nex-board')
   const labels = []
   if (showRank) labels.push('순위')
   labels.push('항목')
   if (hasMeta) labels.push('건수')
   labels.push('금액')
+  body.dataset.cols = String(labels.length)
+  const head = document.createElement('div')
+  head.className = 'nex-board-row nex-board-head'
   labels.forEach((label) => {
     const cell = document.createElement('span')
+    cell.className = nexColOf(label)
     cell.textContent = label
     head.append(cell)
   })
   body.append(head)
   shown.forEach((row, index) => {
     const item = document.createElement('div')
-    item.dataset.settleListRow = '1'
-    if (hasMeta) item.dataset.withMeta = '1'
-    if (!showRank) item.dataset.plain = '1'
+    item.className = 'nex-board-row'
     if (showRank) {
-      const rank = document.createElement('em')
+      const rank = document.createElement('span')
+      rank.className = 'nex-col-rank'
       rank.textContent = String(index + 1).padStart(2, '0')
       item.append(rank)
     }
     const name = document.createElement('span')
+    name.className = 'nex-col-text'
     name.textContent = testTag(row.label)
     item.append(name)
     if (hasMeta) {
-      const meta = document.createElement('i')
+      const meta = document.createElement('span')
+      meta.className = 'nex-col-count'
       meta.textContent = row.sub || '-'
       item.append(meta)
     }
-    const amount = document.createElement('b')
+    const amount = document.createElement('span')
+    amount.className = 'nex-col-money'
     amount.textContent = amountOf(row.value)
     item.append(amount)
     body.append(item)
@@ -1112,7 +1135,7 @@ function paintSettleSamples() {
     { label: '선수', value: 5800, sub: '1건' },
     { label: '세트', value: 4500, sub: '1건' },
   ], { size: false, limit: 5 })
-  const edgeList = { size: false, rank: false, meta: false, amountUnit: '만' }
+  const edgeList = { size: false, rank: false, meta: false }
   paintSettleSampleRows('흑자 종목', [
     { label: '야구', value: 28600 },
     { label: '축구', value: 19200 },
@@ -1127,14 +1150,14 @@ function paintSettleSamples() {
     { label: '미식축구', value: 9800 },
     { label: '격투기', value: 7200 },
   ], edgeList)
-  paintSettleSampleRows('적자 유형', [
+  paintSettleSampleRows('적자 배팅 유형', [
     { label: '언더오버', value: 26400 },
     { label: '핸디캡', value: 18800 },
     { label: '라이브', value: 14200 },
     { label: '스페셜', value: 9600 },
     { label: '카드', value: 6100 },
   ], edgeList)
-  paintSettleSampleRows('흑자 유형', [
+  paintSettleSampleRows('흑자 배팅 유형', [
     { label: '승무패', value: 31200 },
     { label: '핸디캡', value: 15600 },
     { label: '기타', value: 10800 },
@@ -1527,6 +1550,14 @@ function distSettleSum(data) {
   return data.distBalance != null ? Number(data.distBalance) : 0
 }
 
+function memberHoldings(data) {
+  return Object.values(data.users || {}).reduce((sum, user) => {
+    sum.sport += Number(user.money || 0)
+    sum.casino += Number(user.casinoMoney || 0)
+    return sum
+  }, { sport: 0, casino: 0 })
+}
+
 function openBetsOf(data) {
   return BETS.filter((bet, index) => (data.betStatus[index] || bet[6]) === '진행 중')
 }
@@ -1599,21 +1630,23 @@ function paintSettlePlan() {
   if (!section) return
   const host = section.querySelector('.p-4') || section
   const data = store()
-  const memberMoney = Object.values(data.users || {}).reduce((sum, user) => sum + Number(user.money || 0), 0)
+  const holdings = memberHoldings(data)
+  const memberMoney = holdings.sport + holdings.casino
   const distMoney = distSettleSum(data)
   const open = openBetsOf(data)
   const riskMoney = openRiskMoney(open)
   const need = memberMoney + distMoney + riskMoney
   let root = host.querySelector('[data-settle-plan]')
-  if (!root || root.querySelector('[data-plan-payout]') || root.querySelectorAll('[data-plan-grid]>div').length !== 3) {
+  if (!root || root.querySelector('[data-plan-payout]') || root.querySelector('[data-plan-note]') || root.querySelectorAll('[data-plan-grid]>div').length !== 4) {
     host.textContent = ''
     root = document.createElement('div')
     root.dataset.settlePlan = '1'
-    root.innerHTML = '<div data-plan-hero><span>필요 보유 자금 (권장)</span><b data-plan-need></b></div><div data-plan-grid><div><span>회원 보유 머니</span><b data-plan-member></b></div><div><span>총판 보유 머니</span><b data-plan-dist></b></div><div><span>미확정 리스크 머니</span><b data-plan-risk></b></div></div><p data-plan-note>필요 보유 자금 = 회원 보유 + 총판 보유 + 미확정 리스크(당첨금 − 배팅금)입니다.</p>'
+    root.innerHTML = '<div data-plan-hero><span>필요 보유 자금 (권장)</span><b data-plan-need></b></div><div data-plan-grid><div><span>스포츠 보유 머니</span><b data-plan-sport></b></div><div><span>카지노 보유 머니</span><b data-plan-casino></b></div><div><span>총판 보유 머니</span><b data-plan-dist></b></div><div><span>미확정 리스크 머니</span><b data-plan-risk></b></div></div>'
     host.append(root)
   }
   root.querySelector('[data-plan-need]').textContent = num(need)
-  root.querySelector('[data-plan-member]').textContent = num(memberMoney)
+  root.querySelector('[data-plan-sport]').textContent = num(holdings.sport)
+  root.querySelector('[data-plan-casino]').textContent = num(holdings.casino)
   root.querySelector('[data-plan-dist]').textContent = num(distMoney)
   root.querySelector('[data-plan-risk]').textContent = num(riskMoney)
 }
@@ -1630,11 +1663,12 @@ function paintTopSums() {
     slot.append(bar)
   }
   const data = store()
-  const members = Object.values(data.users || {}).reduce((sum, user) => sum + Number(user.money || 0), 0)
+  const holdings = memberHoldings(data)
   bar.textContent = ''
   ;[
-    ['회원 보유 금액 합산', wonText(members)],
-    ['총판 정산 금액 합산', wonText(distSettleSum(data))],
+    ['회원 스포츠 보유금액', wonText(holdings.sport)],
+    ['회원 카지노 보유금액', wonText(holdings.casino)],
+    ['총판 보유 정산금액', wonText(distSettleSum(data))],
   ].forEach(([label, value], index) => {
     if (index) {
       const split = document.createElement('span')
@@ -1659,7 +1693,8 @@ function paintLinked() {
   const half = flowOf(moves.filter((move) => happened(move.when, '15일')))
   const periodName = selectedPeriod()
   const period = flowOf(moves.filter((move) => !periodName || happened(move.when, periodName)))
-  const memberMoney = Object.values(data.users).reduce((sum, user) => sum + user.money, 0)
+  const holdings = memberHoldings(data)
+  const memberMoney = holdings.sport + holdings.casino
   const distMoney = distSettleSum(data)
   const open = openBetsOf(data)
   const openStake = open.reduce((sum, bet) => sum + bet[3], 0)
@@ -1672,6 +1707,8 @@ function paintLinked() {
   const deposits = moves.filter((move) => move.type === '입금' && move.amount > 0 && happened(move.when, '오늘'))
   const withdraws = moves.filter((move) => move.type === '출금' && move.amount < 0 && happened(move.when, '오늘'))
   setLabel('회원 보유 머니', num(memberMoney))
+  setLabel('스포츠 보유 머니', num(holdings.sport))
+  setLabel('카지노 보유 머니', num(holdings.casino))
   setLabel('총판 보유 머니', num(distMoney))
   setLabel('미확정 베팅 노출', num(openStake))
   setLabel('미확정 베팅 총액', num(openStake))
@@ -1786,29 +1823,7 @@ function alignMatchColumns(root) {
   })
 }
 
-function centerTables() {
-  document.querySelectorAll('main table th, main table td').forEach((cell) => {
-    if (isMatchAlignCell(cell)) return
-    cell.classList.remove('text-left', 'text-right', 'text-start', 'text-end')
-    cell.classList.add('text-center')
-    cell.style.textAlign = 'center'
-    cell.querySelectorAll('div').forEach((node) => {
-      if (node.classList.contains('justify-end') || node.classList.contains('justify-start') || node.classList.contains('justify-between')) {
-        node.classList.remove('justify-end', 'justify-start', 'justify-between')
-        node.classList.add('justify-center')
-      }
-    })
-  })
-  document.querySelectorAll('[data-lower-board] th, [data-lower-board] td').forEach((cell) => {
-    if (isMatchAlignCell(cell)) return
-    cell.querySelectorAll('button, a, span, div').forEach((node) => {
-      node.classList.remove('text-left', 'text-right', 'text-start', 'text-end', 'justify-start', 'justify-end', 'justify-between')
-      node.style.textAlign = 'center'
-      node.style.justifyContent = 'center'
-    })
-  })
-  alignMatchColumns(document.querySelector('[data-lower-board]'))
-}
+function centerTables() {}
 
 function stampDemoMarks() {}
 
@@ -1816,7 +1831,7 @@ function refreshTables() {
   if (document.getElementById('bet-history-root')) return
   paintLinked()
   document.querySelectorAll('main table').forEach((table) => applyTable(table, 0))
-  centerTables()
+  upgradeAdminTables()
   stampDemoMarks()
   document.querySelectorAll('[data-nex-row]').forEach((row) => {
     const input = row.closest('main')?.querySelector('input[placeholder*="검색"], input[placeholder*="아이디"]')
@@ -2006,15 +2021,60 @@ function panel(title, body) {
   return `<section class="bg-card border border-edge rounded-xl overflow-hidden"><div class="flex items-center justify-between gap-3 border-b border-edge-soft px-4 py-3"><h2 class="text-sm font-bold text-fg">${title}</h2></div><div class="space-y-3 p-4">${body}</div></section>`
 }
 
+function nexColOf(label) {
+  const name = String(label || '').trim()
+  if (/순위|번호|^No$/i.test(name)) return 'nex-col-rank'
+  if (/상태|심각도/.test(name)) return 'nex-col-status'
+  if (/날짜|일자|일시|시각|시간|가입/.test(name)) return 'nex-col-date'
+  if (/확인|관리|버튼|심사/.test(name)) return 'nex-col-action'
+  if (/건수|^건$/.test(name)) return 'nex-col-count'
+  if (/금액|머니|배팅금|지급|입금|출금|차액|차이|손익|수익|수당|잔액|포인트/.test(name)) return 'nex-col-money'
+  return 'nex-col-text'
+}
+
+function ensureNexTableCss() {
+  if (document.getElementById('nex-table-css')) return
+  const link = document.createElement('link')
+  link.id = 'nex-table-css'
+  link.rel = 'stylesheet'
+  link.href = '/nex/nex-table.css?v=1'
+  document.head.appendChild(link)
+}
+
+function upgradeAdminTables() {
+  document.querySelectorAll('main table').forEach((table) => {
+    if (table.closest('.nex-board')) return
+    table.classList.add('nex-list')
+    if (!table.parentElement?.classList.contains('nex-list-wrap')) {
+      const wrap = document.createElement('div')
+      wrap.className = 'nex-list-wrap'
+      table.replaceWith(wrap)
+      wrap.append(table)
+    }
+    const head = table.tHead?.rows[0]
+    if (!head) return
+    const kinds = [...head.cells].map((th) => {
+      const kind = nexColOf(th.textContent)
+      th.classList.add(kind)
+      return kind
+    })
+    table.querySelectorAll('tbody tr').forEach((row) => {
+      ;[...row.cells].forEach((td, index) => {
+        if (kinds[index]) td.classList.add(kinds[index])
+      })
+    })
+  })
+}
+
 function tableWrap(headers, rows) {
-  const head = headers.map((header) => `<th class="px-3 py-2.5 text-center text-[11px] font-bold uppercase tracking-wider text-muted">${header}</th>`).join('')
+  const head = headers.map((header) => `<th class="${nexColOf(header)}">${header}</th>`).join('')
   const body = rows.join('')
-  return `<div class="overflow-x-auto"><table class="w-full border-collapse text-[13px]"><thead><tr class="border-b border-edge">${head}</tr></thead><tbody>${body}</tbody></table></div>`
+  return `<div class="nex-list-wrap"><table class="nex-list"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`
 }
 
 function cell(text, extra = '') {
-  const cleaned = extra.replace(/\btext-(left|right|start|end)\b/g, '').trim()
-  return `<td class="px-3 py-2.5 align-middle whitespace-nowrap text-center ${cleaned}">${text}</td>`
+  const cleaned = extra.replace(/\btext-(left|right|start|end|center)\b/g, '').trim()
+  return `<td class="${cleaned}">${text}</td>`
 }
 
 function realRows(games) {
@@ -3700,7 +3760,6 @@ function paintCurrentHot(data) {
     })
   })
   expandTeamColumns(board)
-  alignMatchColumns(board)
 }
 
 function reshapeDashboard() {
@@ -3973,12 +4032,10 @@ function reshapeFinance() {
     const heading = section.querySelector('h2')
     if (heading) heading.textContent = title
   })
-  ;[
-    [winTop, '기간 내 정산 기준 - 운영 적자(회원이 가져간 금액)'],
-    [lossTop, '기간 내 정산 기준 - 운영 흑자(회원이 잃은 금액)'],
-  ].forEach(([section, text]) => {
-    const note = [...section.querySelectorAll('p')].find((node) => /정산 기준/.test(node.textContent))
-    if (note) note.textContent = text
+  ;[winTop, lossTop].forEach((section) => {
+    section.querySelectorAll('p').forEach((node) => {
+      if (/정산 기준/.test(node.textContent)) node.remove()
+    })
   })
   const headRow = table.querySelector('thead tr')
   const names = ['날짜', '입금 금액', '출금 금액', '차이', '건수', '배팅금', '지급금', '총판 수당', '손익']
@@ -3986,7 +4043,7 @@ function reshapeFinance() {
     headRow.textContent = ''
     names.forEach((name) => {
       const cell = document.createElement('th')
-      cell.className = 'px-3 py-2.5 text-[11px] font-bold text-muted uppercase tracking-wider whitespace-nowrap text-center'
+      cell.className = nexColOf(name)
       cell.textContent = name
       headRow.append(cell)
     })
@@ -4056,8 +4113,8 @@ function reshapeFinance() {
   const channelMix = makeMixSection('카지노 & 스포츠 & 미니게임 비중')
   const sportWin = makeMixSection('흑자 종목')
   const sportLoss = makeMixSection('적자 종목')
-  const typeLoss = makeMixSection('적자 유형')
-  const typeWin = makeMixSection('흑자 유형')
+  const typeLoss = makeMixSection('적자 배팅 유형')
+  const typeWin = makeMixSection('흑자 배팅 유형')
   const sportSplit = document.createElement('div')
   sportSplit.dataset.settleSplit = '1'
   sportSplit.append(sportMix, typeMix)
@@ -4169,7 +4226,7 @@ function richPage(path, data) {
     const moneySum = Object.values(data.users).reduce((sum, item) => sum + item.money, 0)
     const blocked = Object.values(data.users).filter((item) => item.blocked).length
     const rows = people.map(([login, item]) => `<tr class="border-b border-edge-soft">${cell(item.nick + ' (' + login + ')', 'font-bold')}${cell(gradeOf(item))}${cell(item.money.toLocaleString('ko-KR'), 'text-right font-bold tabular-nums')}${cell(item.points.toLocaleString('ko-KR'), 'text-right tabular-nums')}${cell(item.blocked ? '차단' : '정상')}${cell(item.blockReason || '-')}${cell(`<button type="button" data-user="${login}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">${item.blocked ? '해제' : '차단'}</button>`)}</tr>`).join('')
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('회원', Object.keys(data.users).length + '명')}${stat('보유 머니 합', moneySum.toLocaleString('ko-KR'))}${stat('차단', blocked + '명')}</div>${panel(onlyBlocked ? '블랙리스트' : '회원 관리', `${chips(onlyBlocked ? ['차단', '전체'] : ['전체', '정상', '차단'])}${search('회원 아이디')}${tableWrap(['닉네임(아이디)', '등급', '머니', '포인트', '상태', '사유', '관리'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="7">표시할 회원이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('회원', Object.keys(data.users).length + '명')}${stat('보유 머니 합', moneySum.toLocaleString('ko-KR'))}${stat('차단', blocked + '명')}</div>${panel(onlyBlocked ? '블랙리스트' : '회원 관리', `${chips(onlyBlocked ? ['차단', '전체'] : ['전체', '정상', '차단'])}${search('회원 아이디')}${tableWrap(['닉네임(아이디)', '등급', '머니', '포인트', '상태', '사유', '관리'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="7">표시할 회원이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/bets.html')) {
     const placed = data.placedBets.map((bet) => `<tr class="border-b border-edge-soft">${cell(`${testTag(bet.nick)} (${bet.login})`)}${cell(testTag(bet.match))}${cell(testTag(bet.pick))}${cell(Number(bet.stake).toLocaleString('ko-KR'), 'text-right font-bold tabular-nums')}${cell(String(bet.odds), 'text-right')}${cell(Math.round(bet.stake * bet.odds).toLocaleString('ko-KR'), 'text-right text-gold font-bold tabular-nums')}${cell(`<span class="${STATUS_CLASS[bet.status] || ''}">${bet.status}</span>`)}${cell(`<button type="button" data-placed="${bet.id}" data-result="적중" class="mr-1 rounded-md border border-edge px-2 py-1 text-[11px] font-bold">적중</button><button type="button" data-placed="${bet.id}" data-result="미적중" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">미적중</button>`)}</tr>`)
@@ -4190,24 +4247,24 @@ function richPage(path, data) {
   if (path.endsWith('/inquiries.html')) {
     const waiting = data.inquiries.filter((item) => item.status !== '답변').length
     const rows = data.inquiries.map((item) => `<tr class="border-b border-edge-soft">${cell(item.title, 'font-bold')}${cell(item.body)}${cell(`<span class="${STATUS_CLASS[item.status] || ''}">${item.status}</span>`)}${cell(item.answer || '-')}${cell(`<button type="button" data-answer="${item.id}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">답변</button>`)}</tr>`).join('')
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('문의', data.inquiries.length + '건')}${stat('대기', waiting + '건')}</div>${panel('1:1 문의 관리', `${chips(['전체', '대기', '답변'])}${search('제목 검색')}${tableWrap(['제목', '내용', '상태', '답변', '처리'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">문의가 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('문의', data.inquiries.length + '건')}${stat('대기', waiting + '건')}</div>${panel('1:1 문의 관리', `${chips(['전체', '대기', '답변'])}${search('제목 검색')}${tableWrap(['제목', '내용', '상태', '답변', '처리'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">문의가 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/points.html')) {
     const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(memberLabel(data.users[move.login]?.nick || move.login, move.login))}${cell(Number(move.amount) > 0 ? '지급' : '회수')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('이수민 포인트', user.points.toLocaleString('ko-KR') + 'P')}${stat('윤아현 포인트', data.users.yoonah.points.toLocaleString('ko-KR') + 'P')}</div>${panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'leesu', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form>${chips(['전체', '지급', '회수'])}${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('이수민 포인트', user.points.toLocaleString('ko-KR') + 'P')}${stat('윤아현 포인트', data.users.yoonah.points.toLocaleString('ko-KR') + 'P')}</div>${panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'leesu', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form>${chips(['전체', '지급', '회수'])}${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/logs.html')) {
     const rows = data.logs.map((item) => `<tr class="border-b border-edge-soft">${cell(item.at, 'text-muted')}${cell(item.text)}</tr>`).join('')
-    return `<div class="space-y-4">${note()}${panel('활동 로그', `${search('내용 검색')}${tableWrap(['시각', '내용'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="2">아직 기록이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}${panel('활동 로그', `${search('내용 검색')}${tableWrap(['시각', '내용'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="2">아직 기록이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/wallet.html')) {
     const usdt = data.cashExtra.filter((item) => String(item.memo || '').includes('USDT'))
     const rows = usdt.map((item) => `<tr class="border-b border-edge-soft">${cell(memberLabel(item.nick || item.login, item.login))}${cell(item.type)}${cell(Number(item.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item.status)}${cell(item.requestedAt || '-')}</tr>`).join('')
-    return `<div class="space-y-4">${note()}${panel('USDT 설정', `<form data-wallet-form class="grid max-w-xl gap-3">${field('네트워크', data.wallet.network || 'TRC-20', 'network')}${field('지갑 주소', data.wallet.address, 'address')}${field('환율', data.wallet.rate || '1450', 'rate')}${field('최소 USDT', data.wallet.min || '10', 'min')}${field('메모', data.wallet.note, 'note')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">저장</button></form>`)}${panel('USDT 신청', tableWrap(['닉네임(아이디)', '유형', '금액', '상태', '시각'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">USDT 신청이 없습니다.</td></tr>']))}</div>`
+    return `<div class="space-y-4">${note()}${panel('USDT 설정', `<form data-wallet-form class="grid max-w-xl gap-3">${field('네트워크', data.wallet.network || 'TRC-20', 'network')}${field('지갑 주소', data.wallet.address, 'address')}${field('환율', data.wallet.rate || '1450', 'rate')}${field('최소 USDT', data.wallet.min || '10', 'min')}${field('메모', data.wallet.note, 'note')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">저장</button></form>`)}${panel('USDT 신청', tableWrap(['닉네임(아이디)', '유형', '금액', '상태', '시각'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">USDT 신청이 없습니다.</td></tr>']))}</div>`
   }
   if (path.endsWith('/banners.html')) {
     const rows = data.banners.map((item, index) => `<tr class="border-b border-edge-soft">${cell(item.title, 'font-bold')}${cell(item.on ? '노출' : '숨김')}${cell(`<button type="button" data-banner="${index}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">${item.on ? '숨김' : '노출'}</button>`)}</tr>`).join('')
-    return `<div class="space-y-4">${note()}${stat('배너', data.banners.length + '개')}${panel('팝업/배너 설정', `<form data-banner-form class="flex flex-wrap items-end gap-2">${field('제목', '', 'title')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">추가</button></form>${chips(['전체', '노출', '숨김'])}${tableWrap(['제목', '상태', '관리'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="3">배너가 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}${stat('배너', data.banners.length + '개')}${panel('팝업/배너 설정', `<form data-banner-form class="flex flex-wrap items-end gap-2">${field('제목', '', 'title')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">추가</button></form>${chips(['전체', '노출', '숨김'])}${tableWrap(['제목', '상태', '관리'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="3">배너가 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/settle-audit.html')) {
     const deposits = data.cashExtra.filter((item) => item.type === '입금' && item.status === '승인').reduce((sum, item) => sum + Number(item.amount), 0)
@@ -4216,7 +4273,7 @@ function richPage(path, data) {
   }
   if (path.endsWith('/casino.html')) {
     const rows = data.casinoVisits.map((item) => `<tr class="border-b border-edge-soft">${cell(item.name, 'font-bold')}${cell('로비')}${cell('0', 'text-right')}${cell(item.at)}</tr>`).join('')
-    return `<div class="space-y-4">${note()}${panel('카지노 내역', `<p class="text-xs text-dim">로비 입장만 기록합니다. 머니는 이동하지 않습니다.</p>${chips(['전체', '로비'])}${search('게임사 검색')}${tableWrap(['게임', '종류', '금액', '시각'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="4">입장 기록이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}${panel('카지노 내역', `<p class="text-xs text-dim">로비 입장만 기록합니다. 머니는 이동하지 않습니다.</p>${chips(['전체', '로비'])}${search('게임사 검색')}${tableWrap(['게임', '종류', '금액', '시각'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="4">입장 기록이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/home.html')) {
     const upcoming = REAL_GAMES.filter((game) => game.picks)
@@ -4239,7 +4296,7 @@ function richPage(path, data) {
   if (path.endsWith('/user-cash.html')) {
     const policy = data.settings['입출금 정책']?.['등급없음'] || []
     const rows = data.cashExtra.filter((item) => item.login === 'leesu').map((item) => `<tr class="border-b border-edge-soft">${cell(item.type)}${cell(Number(item.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item.memo || '-')}${cell(`<span class="${STATUS_CLASS[item.status] || ''}">${item.status}</span>`)}${cell(item.requestedAt || '-')}</tr>`).join('')
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('보유 머니', user.money.toLocaleString('ko-KR'))}${stat('최소 입금', Number(policy[0] ?? 10000).toLocaleString('ko-KR'))}${stat('1회 최대 출금', Number(policy[2] ?? 10000000).toLocaleString('ko-KR'))}</div>${panel('입출금', `${chips(['전체', '입금', '출금', '대기', '승인', '거절', '계좌', 'USDT'])}<form data-user-cash class="space-y-3"><select data-field="type" class="h-10 rounded-lg border border-edge bg-input px-3 text-sm font-bold"><option>입금</option><option>출금</option></select><div class="flex flex-wrap gap-1"><button type="button" data-preset="10000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">1만</button><button type="button" data-preset="50000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">5만</button><button type="button" data-preset="100000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">10만</button></div>${field('금액', '10000', 'amount', 'number')}${field('메모', '', 'memo')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">신청</button></form><p data-cash-result class="text-sm font-bold text-accent"></p>${tableWrap(['유형', '금액', '메모', '상태', '시각'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">신청 내역이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('보유 머니', user.money.toLocaleString('ko-KR'))}${stat('최소 입금', Number(policy[0] ?? 10000).toLocaleString('ko-KR'))}${stat('1회 최대 출금', Number(policy[2] ?? 10000000).toLocaleString('ko-KR'))}</div>${panel('입출금', `${chips(['전체', '입금', '출금', '대기', '승인', '거절', '계좌', 'USDT'])}<form data-user-cash class="space-y-3"><select data-field="type" class="h-10 rounded-lg border border-edge bg-input px-3 text-sm font-bold"><option>입금</option><option>출금</option></select><div class="flex flex-wrap gap-1"><button type="button" data-preset="10000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">1만</button><button type="button" data-preset="50000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">5만</button><button type="button" data-preset="100000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">10만</button></div>${field('금액', '10000', 'amount', 'number')}${field('메모', '', 'memo')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">신청</button></form><p data-cash-result class="text-sm font-bold text-accent"></p>${tableWrap(['유형', '금액', '메모', '상태', '시각'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">신청 내역이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/account.html')) {
     const minBet = data.settings['베팅 한도']?.['등급없음']?.[0] || 1000
@@ -4247,7 +4304,7 @@ function richPage(path, data) {
   }
   if (path.endsWith('/messages.html')) {
     const rows = data.messages.map((item, index) => `<tr class="border-b border-edge-soft">${cell(item.title, 'font-bold')}${cell(item.body)}${cell(item.read ? '열람' : '미열람')}${cell(item.at, 'text-muted')}${cell(`<button type="button" data-read="${index}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">열람</button>`)}</tr>`).join('')
-    return `<div class="space-y-4">${note()}${panel('쪽지함', `${chips(['전체', '미열람', '열람'])}${tableWrap(['제목', '내용', '상태', '시각', '관리'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">받은 쪽지가 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}${panel('쪽지함', `${chips(['전체', '미열람', '열람'])}${tableWrap(['제목', '내용', '상태', '시각', '관리'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">받은 쪽지가 없습니다.</td></tr>'])}`)}</div>`
   }
   if (/board-\d\.html$/.test(path)) {
     const board = path.match(/board-(\d)/)[1]
@@ -4255,7 +4312,7 @@ function richPage(path, data) {
     const tag = { 1: '공지', 2: '이벤트', 3: '자유' }[board]
     const posts = (data.boardPosts || []).filter((item) => item.board === board)
     const rows = posts.map((item, index) => `<tr class="border-b border-edge-soft">${cell(tag)}${cell(item.title, 'font-bold')}${cell(item.body)}${cell(String(item.likes || 0), 'text-right')}${cell(`<button type="button" data-like="${board}:${index}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">추천</button>`)}</tr>`).join('')
-    return `<div class="space-y-4">${note()}${panel(titles[board], `${chips(['전체', tag])}<form data-board="${board}" class="space-y-2">${field('제목', '', 'title')}${field('내용', '', 'body')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">등록</button></form>${tableWrap(['구분', '제목', '내용', '추천', ''], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">글이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}${panel(titles[board], `${chips(['전체', tag])}<form data-board="${board}" class="space-y-2">${field('제목', '', 'title')}${field('내용', '', 'body')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">등록</button></form>${tableWrap(['구분', '제목', '내용', '추천', ''], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">글이 없습니다.</td></tr>'])}`)}</div>`
   }
   return null
 }
@@ -4295,22 +4352,22 @@ function renderPlaceholder() {
     const onlyBlocked = path.endsWith('/blacklist.html')
     const people = Object.entries(data.users).filter(([, user]) => (onlyBlocked ? user.blocked : true))
     const rows = people.map(([login, user]) => `<tr class="border-b border-edge-soft">${cell(user.nick + ' (' + login + ')', 'font-bold')}${cell(user.money.toLocaleString('ko-KR'), 'text-right tabular-nums')}${cell(user.points.toLocaleString('ko-KR'), 'text-right tabular-nums')}${cell(user.blocked ? '차단' : '정상')}${cell(`<button type="button" data-user="${login}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">${user.blocked ? '해제' : '차단'}</button>`)}</tr>`).join('')
-    replacePlaceholder(panel(onlyBlocked ? '블랙리스트' : '회원 관리', `<input data-table-search placeholder="아이디, 닉네임 검색" class="h-9 w-56 rounded-lg border border-edge bg-input px-3 text-sm">${tableWrap(['닉네임(아이디)', '머니', '포인트', '상태', '관리'], [rows || `<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">${onlyBlocked ? '차단된 회원이 없습니다.' : '회원이 없습니다.'}</td></tr>`])}`))
+    replacePlaceholder(panel(onlyBlocked ? '블랙리스트' : '회원 관리', `<input data-table-search placeholder="아이디, 닉네임 검색" class="h-9 w-56 rounded-lg border border-edge bg-input px-3 text-sm">${tableWrap(['닉네임(아이디)', '머니', '포인트', '상태', '관리'], [rows || `<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">${onlyBlocked ? '차단된 회원이 없습니다.' : '회원이 없습니다.'}</td></tr>`])}`))
     return true
   }
   if (path.endsWith('/inquiries.html')) {
     const rows = data.inquiries.map((item) => `<tr class="border-b border-edge-soft">${cell(item.title, 'font-bold')}${cell(item.body)}${cell(item.status)}${cell(item.answer || '-')}${cell(`<button type="button" data-answer="${item.id}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold">답변</button>`)}</tr>`).join('')
-    replacePlaceholder(panel('1:1 문의 관리', tableWrap(['제목', '내용', '상태', '답변', '처리'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">문의가 없습니다.</td></tr>'])))
+    replacePlaceholder(panel('1:1 문의 관리', tableWrap(['제목', '내용', '상태', '답변', '처리'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">문의가 없습니다.</td></tr>'])))
     return true
   }
   if (path.endsWith('/points.html')) {
     const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(memberLabel(data.users[move.login]?.nick || move.login, move.login))}${cell(move.reason || '지급')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
-    replacePlaceholder(panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'leesu', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form><div class="text-sm text-dim">이수민 ${data.users.leesu.points.toLocaleString('ko-KR')}P · 윤아현 ${data.users.yoonah.points.toLocaleString('ko-KR')}P</div>${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`))
+    replacePlaceholder(panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'leesu', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form><div class="text-sm text-dim">이수민 ${data.users.leesu.points.toLocaleString('ko-KR')}P · 윤아현 ${data.users.yoonah.points.toLocaleString('ko-KR')}P</div>${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`))
     return true
   }
   if (path.endsWith('/logs.html')) {
     const rows = data.logs.map((item) => `<tr class="border-b border-edge-soft">${cell(item.at, 'text-muted')}${cell(item.text)}</tr>`).join('')
-    replacePlaceholder(panel('활동 로그', tableWrap(['시각', '내용'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="2">아직 기록이 없습니다.</td></tr>'])))
+    replacePlaceholder(panel('활동 로그', tableWrap(['시각', '내용'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="2">아직 기록이 없습니다.</td></tr>'])))
     return true
   }
   if (path.endsWith('/wallet.html')) {
@@ -4319,7 +4376,7 @@ function renderPlaceholder() {
   }
   if (path.endsWith('/banners.html')) {
     const rows = data.banners.map((item) => `<tr class="border-b border-edge-soft">${cell(item.title, 'font-bold')}${cell(item.on ? '노출' : '숨김')}</tr>`).join('')
-    replacePlaceholder(panel('팝업/배너 설정', `<form data-banner-form class="flex flex-wrap items-end gap-2">${field('제목', '', 'title')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">추가</button></form>${tableWrap(['제목', '상태'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="2">배너가 없습니다.</td></tr>'])}`))
+    replacePlaceholder(panel('팝업/배너 설정', `<form data-banner-form class="flex flex-wrap items-end gap-2">${field('제목', '', 'title')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">추가</button></form>${tableWrap(['제목', '상태'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="2">배너가 없습니다.</td></tr>'])}`))
     return true
   }
   if (path.endsWith('/settle-audit.html')) {
@@ -4354,7 +4411,7 @@ function renderPlaceholder() {
   }
   if (path.endsWith('/messages.html')) {
     const rows = data.messages.map((item) => `<tr class="border-b border-edge-soft">${cell(item.title, 'font-bold')}${cell(item.body)}${cell(item.at, 'text-muted')}</tr>`).join('')
-    replacePlaceholder(panel('쪽지함', tableWrap(['제목', '내용', '시각'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="3">받은 쪽지가 없습니다.</td></tr>'])))
+    replacePlaceholder(panel('쪽지함', tableWrap(['제목', '내용', '시각'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="3">받은 쪽지가 없습니다.</td></tr>'])))
     return true
   }
   if (path.endsWith('/live.html') || path.endsWith('/all.html')) {
@@ -4367,7 +4424,7 @@ function renderPlaceholder() {
     const titles = { 1: '공지사항', 2: '이벤트 게시판', 3: '자유게시판' }
     const posts = (data.boardPosts || []).filter((item) => item.board === board)
     const rows = posts.map((item) => `<tr class="border-b border-edge-soft">${cell(item.title, 'font-bold')}${cell(item.body)}</tr>`).join('')
-    replacePlaceholder(panel(titles[board], `<form data-board="${board}" class="space-y-2">${field('제목', '', 'title')}${field('내용', '', 'body')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">등록</button></form>${tableWrap(['제목', '내용'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="2">글이 없습니다.</td></tr>'])}`))
+    replacePlaceholder(panel(titles[board], `<form data-board="${board}" class="space-y-2">${field('제목', '', 'title')}${field('내용', '', 'body')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">등록</button></form>${tableWrap(['제목', '내용'], [rows || '<tr><td class="px-3 py-8 text-sm text-dim" colspan="2">글이 없습니다.</td></tr>'])}`))
     return true
   }
   if (path.endsWith('/casino-slots.html')) {
@@ -4835,7 +4892,59 @@ function boardLayout() {
     style.id = 'nex-board-style'
     document.head.appendChild(style)
   }
-  style.textContent = '[data-status-zones]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}[data-status-zones] section{display:flex;flex-direction:column;gap:8px;width:auto;max-width:none;min-width:0;background:#191c1f;border:1px solid #2e343a;border-radius:12px;padding:8px 10px}[data-status-zones] h2{margin:0;font-size:24px;font-weight:700;line-height:1.2;text-align:center}[data-status-zones] [data-zone-grid]{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;width:100%;align-items:stretch}[data-status-zones] [data-zone-grid]>.bg-card,[data-status-zones] [data-zone-grid]>a{width:auto;height:auto;min-height:0;min-width:0}[data-status-zones] .bg-card{width:auto;height:auto;min-height:0;padding:8px 10px;justify-content:center;text-align:center}[data-status-zones] .truncate{overflow:visible;text-overflow:unset;white-space:nowrap}[data-status-zones] .text-muted{color:#e8eef6}[data-status-zones] section:has([data-zone-grid]>:nth-child(3)){grid-column:1 / -1}[data-status-zones] section[data-tone="in"]:has([data-zone-grid]),[data-status-zones] section[data-tone="out"]:has([data-zone-grid]){grid-column:auto}[data-status-zones] section[data-tone="in"] [data-zone-grid],[data-status-zones] section[data-tone="out"] [data-zone-grid]{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}[data-status-zones] section[data-tone="in"] .bg-card,[data-status-zones] section[data-tone="out"] .bg-card{flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px 4px}[data-status-zones] section[data-tone="in"] .bg-card>.min-w-0,[data-status-zones] section[data-tone="out"] .bg-card>.min-w-0{width:100%;min-width:0;text-align:center}[data-status-zones] section[data-tone="in"] .text-muted,[data-status-zones] section[data-tone="out"] .text-muted{white-space:normal;letter-spacing:0;font-size:10px;line-height:1.25}[data-status-zones] section[data-tone="in"] .text-lg,[data-status-zones] section[data-tone="out"] .text-lg{font-size:13px}[data-status-zones] section[data-tone="in"] .w-9,[data-status-zones] section[data-tone="out"] .w-9{width:26px;height:26px}[data-status-zones] section[data-tone="in"] .truncate,[data-status-zones] section[data-tone="out"] .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}[data-status-zones] section:has([data-zone-grid]>:nth-child(6)) [data-zone-grid]{grid-template-columns:repeat(3,minmax(0,1fr))}[data-status-zones] section:last-child:not(:has([data-zone-grid]>:nth-child(3))){grid-column:1 / -1}[data-status-zones] section[data-tone="access"]{background:#1a1e22;border-color:#2e343c}[data-status-zones] section[data-tone="in"]{background:#1a1f1d;border-color:#2e3632}[data-status-zones] section[data-tone="out"]{background:#1f1b1d;border-color:#363034}[data-status-zones] section[data-tone="wait-in"]{background:#1e1d1a;border-color:#363430}[data-status-zones] section[data-tone="wait-out"]{background:#1e1c1a;border-color:#363230}[data-status-zones] section[data-tone="sport"]{background:#1c1e1a;border-color:#323630}[data-status-zones] section[data-tone="casino"]{background:#1d1b1e;border-color:#343034}[data-status-zones] section[data-tone="dist"]{grid-column:1 / -1;background:#1a1e1e;border-color:#2e3434}[data-status-zones] section[data-tone="live"]{background:#1a1c20;border-color:#2e323a}[data-status-zones] section[data-tone="access"] .bg-card{background:#24292f;border-color:#353b44}[data-status-zones] section[data-tone="in"] .bg-card{background:#242b28;border-color:#353e3a}[data-status-zones] section[data-tone="out"] .bg-card{background:#2a2427;border-color:#3e3539}[data-status-zones] section[data-tone="wait-in"] .bg-card{background:#2a2824;border-color:#3e3b35}[data-status-zones] section[data-tone="wait-out"] .bg-card{background:#2a2624;border-color:#3e3935}[data-status-zones] section[data-tone="sport"] .bg-card{background:#262924;border-color:#393e35}[data-status-zones] section[data-tone="casino"] .bg-card{background:#282428;border-color:#3b353b}[data-status-zones] section[data-tone="dist"] .bg-card{background:#242a2a;border-color:#353e3e}[data-status-zones] section[data-tone="live"] .bg-card{background:#24272e;border-color:#353942}[data-status-zones] .w-9{background:#2e343c;color:#d5dbe3}[data-status-zones] [data-tone="access"] .w-9{background:#2e343c;color:#d7dee6}[data-status-zones] [data-tone="in"] .w-9{background:#2c3430;color:#d5e0db}[data-status-zones] [data-tone="out"] .w-9{background:#342e32;color:#e0d6db}[data-status-zones] [data-tone="wait-in"] .w-9{background:#34322c;color:#e0ddd4}[data-status-zones] [data-tone="wait-out"] .w-9{background:#34302c;color:#e0dbd4}[data-status-zones] [data-tone="sport"] .w-9{background:#30342c;color:#dce0d4}[data-status-zones] [data-tone="casino"] .w-9{background:#322e34;color:#ddd6e0}[data-status-zones] [data-tone="dist"] .w-9{background:#2e3634;color:#d5e0dc}[data-status-zones] [data-tone="bet"] .w-9{background:#30342c;color:#dce0d4}[data-status-zones] [data-tone="live"] .w-9{background:#2e323c;color:#d6dae2}[data-lower-board]{display:flex;flex-direction:column;gap:0;margin-top:28px;padding:6px 2px 24px;background:#101316}[data-lower-board] [data-lower-row],[data-lower-board] [data-rank-frame],[data-lower-board] [data-match-slot]{padding:22px 6px 4px;border-top:1px solid #2a3138}[data-lower-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow-x:auto}[data-lower-board] section>div:first-child{display:block;width:100%;border:0;padding:0 0 8px;background:transparent}[data-lower-board] h2{display:block;width:100%;margin:0 0 16px;padding:0 0 10px;font-size:22px;font-weight:800;letter-spacing:0;line-height:1.35;color:#f4f7fb;text-align:center;border-bottom:1px solid #3a424a}[data-lower-board] p{text-align:center}[data-lower-board] .px-4,[data-lower-board] .p-4,[data-lower-board] .py-3{padding:0}[data-lower-board] [data-flow] .px-4>.flex{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border-top:1px solid #2a3138;border-bottom:1px solid #2a3138}[data-lower-board] [data-flow] .px-4>.flex>span{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:transparent;border:0;border-radius:0;border-right:1px solid #2a3138;padding:16px 14px 12px}[data-lower-board] [data-flow] .px-4>.flex>span b{font-size:28px;line-height:1;font-weight:700;letter-spacing:-.04em}[data-lower-board] [data-flow] .px-4>.flex>a{grid-column:1 / -1;margin:10px 0 0;width:max-content;color:#d5dbe2;text-decoration:underline;text-underline-offset:3px}[data-lower-board] [data-snap] dl{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;border-top:1px solid #2a3138;border-bottom:1px solid #2a3138}[data-lower-board] [data-snap] dl>div{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:transparent;border:0;border-radius:0;border-right:1px solid #2a3138;padding:16px 12px 12px}[data-lower-board] [data-snap] .border-t{display:none}[data-lower-board] [data-snap] dd,[data-lower-board] [data-snap] .text-right{text-align:left}[data-lower-board] [data-snap] .font-black{font-size:22px;letter-spacing:-.04em;line-height:1}[data-lower-board] [data-snap] a,[data-lower-board] a.mt-auto{display:inline-flex;margin-top:12px;padding:0;background:transparent;color:#d5dbe2;text-decoration:underline;text-underline-offset:3px;justify-content:flex-start}[data-lower-board] table{width:100%;border-collapse:collapse;background:transparent}[data-lower-board] th{padding:0 10px 8px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#6e7882;text-align:center!important;border:0;border-bottom:1px solid #2a3138;background:transparent;white-space:nowrap!important}[data-lower-board] td{padding:12px 10px;font-size:12px;line-height:1.35;text-align:center!important;border:0;border-bottom:1px solid #1c2228;background:transparent;white-space:nowrap!important}[data-lower-board] tbody tr:last-child td{border-bottom:0}[data-lower-board] td span{background:transparent;border-radius:0;padding:0}[data-lower-board] td div,[data-lower-board] td span{justify-content:center!important}[data-lower-board] svg{display:block;width:100%;max-height:150px}[data-lower-board] [data-rank-grid]{display:grid;grid-template-columns:minmax(0,1fr);gap:28px;align-items:start}[data-lower-board] [data-rank-frame]>h2{margin-bottom:16px}@media (max-width:980px){[data-lower-board] [data-lower-row="work"],[data-lower-board] [data-rank-grid],[data-lower-board] [data-flow] .px-4>.flex,[data-lower-board] [data-snap] dl{grid-template-columns:1fr}[data-lower-board] [data-flow] .px-4>.flex>span,[data-lower-board] [data-snap] dl>div{border-right:0;border-bottom:1px solid #2a3138}}[data-settle-legacy]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}[data-settle-board]{display:flex;flex-direction:column;gap:22px;margin-top:8px;padding:4px 0 32px}[data-settle-query]{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end;padding:0 0 14px;border-bottom:1px solid #3a424a}[data-settle-query] label{display:flex;flex-direction:column;gap:6px;min-width:148px;font-size:12px;font-weight:700;color:#9aa3ad}[data-settle-query] input,[data-settle-query] select{height:38px;border:0;border-bottom:1px solid #6e7882;border-radius:0;background:transparent;color:#f4f7fb;padding:0 2px;font-size:14px}[data-settle-query] button{height:38px;padding:0 18px;border:1px solid #c5ced8;border-radius:0;background:transparent;color:#f4f7fb;font-size:13px;font-weight:800}[data-settle-query] [data-settle-search]{min-width:84px;background:#24303a;border-color:#9aa3ad;color:#f4f7fb;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .1s ease,box-shadow .15s ease}[data-settle-query] [data-settle-search]:hover{background:#334554;border-color:#e8eef6;color:#fff}[data-settle-query] [data-settle-search]:active,[data-settle-query] [data-settle-search][data-on]{background:#1a222a;border-color:#c5ced8;transform:translateY(1px)}[data-settle-query] [data-settle-search]:focus-visible{outline:1px solid #c5ced8;outline-offset:2px}[data-settle-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible}[data-settle-board] h2{display:block;width:100%;margin:0 0 12px;padding:0 0 8px;font-size:18px;font-weight:800;letter-spacing:0;line-height:1.35;color:#f4f7fb;text-align:left;border-bottom:1px solid #3a424a}[data-settle-board] section>div:first-child{display:block;width:100%;border:0;padding:0;background:transparent}[data-settle-board] .uppercase{text-transform:none;letter-spacing:0}[data-settle-board] .w-9,[data-settle-band="plan"] .h-9{display:none}[data-settle-metrics]{display:block}[data-settle-metrics]>.grid,[data-settle-metrics]>.grid:last-child{display:grid;grid-template-columns:1fr 1fr;gap:0}[data-settle-metrics] .bg-card{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;min-width:0;background:transparent;border:0;border-radius:0;border-bottom:1px solid #243038;padding:11px 8px}[data-settle-metrics] .min-w-0{display:flex;flex:1;align-items:center;justify-content:space-between;gap:12px;min-width:0}[data-settle-metrics] .text-lg{font-size:18px;font-weight:800}[data-settle-metrics] .truncate{overflow:visible;text-overflow:unset;white-space:normal}[data-settle-board] th{font-size:11px;font-weight:700;color:#8b95a1;text-align:center!important}[data-settle-board] td{text-align:center!important;border-bottom:1px solid #1c2228}[data-settle-board] [data-settle-tone] .p-4{display:flex;flex-direction:column;align-items:stretch}[data-settle-board] [data-settle-tone]>[data-settle-sample]{align-items:stretch}[data-settle-band="plan"] .p-4{display:flex;flex-direction:column;gap:8px;padding:0}[data-settle-band="plan"] h2{text-align:center!important}[data-settle-plan]{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}[data-plan-hero]{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;padding:4px 2px 12px;border-bottom:1px solid #3a424a}[data-plan-hero] span{font-size:13px;font-weight:800;color:#c5ced8}[data-plan-hero] b{font-size:28px;font-weight:800;color:#f4f7fb;letter-spacing:-.03em}[data-plan-grid]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;width:100%}[data-plan-grid]>div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px 10px;border-bottom:1px solid #243038;border-right:1px solid #243038;text-align:center}[data-plan-grid]>div:last-child{border-right:0}[data-plan-grid] span{font-size:12px;font-weight:700;color:#9aa3ad}[data-plan-grid] b{font-size:18px;font-weight:800;color:#f4f7fb}[data-plan-note]{margin:0;max-width:52rem;font-size:12px;line-height:1.55;color:#9aa3ad;text-align:center}@media (max-width:980px){[data-plan-grid]{grid-template-columns:1fr}[data-plan-grid]>div{border-right:0}}[data-settle-band="spread"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}[data-settle-split]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;min-width:0;align-items:stretch}[data-settle-band="rank"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}[data-settle-band="edge"]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}@media (max-width:1100px){[data-settle-band="edge"]{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:640px){[data-settle-band="edge"]{grid-template-columns:1fr}}[data-settle-mix-wrap]{display:flex;align-items:center;justify-content:center;gap:22px;min-width:0;width:100%}[data-settle-mix-chart]{position:relative;flex:0 0 150px;width:150px;height:150px}[data-settle-mix-chart] svg{display:block;width:150px;height:150px;max-height:none}[data-settle-mix-center]{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none}[data-settle-mix-center] span{font-size:10px;font-weight:800;color:#9aa3ad}[data-settle-mix-center] b{font-size:14px;font-weight:900;color:#f4f7fb;letter-spacing:-.02em}[data-settle-mix-legend]{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:0;flex:1 1 auto;max-width:280px}[data-settle-mix-row]{display:grid;grid-template-columns:10px minmax(0,1fr) 40px 72px;align-items:center;justify-items:start;gap:8px;font-size:12px;width:100%}[data-settle-mix-row] i{display:block;width:10px;height:10px;border-radius:3px;flex:0 0 auto}[data-settle-mix-row] span{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:#c5ced8;text-align:left;white-space:nowrap}[data-settle-mix-row] em{font-style:normal;color:#9aa3ad;font-variant-numeric:tabular-nums;text-align:right;justify-self:end}[data-settle-mix-row] b{font-weight:800;color:#f4f7fb;font-variant-numeric:tabular-nums;text-align:right;justify-self:end}@media (max-width:640px){[data-settle-mix-wrap]{flex-direction:column;align-items:center}}[data-settle-hold]{display:none}@media (max-width:980px){[data-settle-metrics]>.grid,[data-settle-metrics]>.grid:last-child{grid-template-columns:1fr}}[data-settle-query] [data-settle-date]{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-width:168px}[data-settle-query] [data-settle-date] input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}[data-settle-query] [data-settle-face]{display:flex;align-items:center;justify-content:center;width:100%;height:38px;padding:0;border:0;border-bottom:1px solid #6e7882;border-radius:0;background:transparent;color:#f4f7fb;font-size:14px;font-weight:700;text-align:center;letter-spacing:.02em;cursor:pointer}[data-settle-query] [data-open-cal]{position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:1}[data-settle-query] [data-open-cal]{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid #6e7882;background:#1c2126;color:#f4f7fb;cursor:pointer}[data-settle-query] input[type="date"]::-webkit-calendar-picker-indicator{opacity:0;width:0;padding:0;margin:0}[data-settle-query] [data-settle-span-label]{min-width:168px}[data-settle-query] select{color-scheme:dark;background:#1c2126;color:#f4f7fb}[data-settle-query] select option{background:#1c2126;color:#f4f7fb}[data-settle-date]{position:relative}[data-settle-cal]{position:absolute;top:42px;left:0;z-index:50;width:280px;padding:10px;background:#1c2126;border:1px solid #8b95a1;color:#f4f7fb}[data-settle-cal] [data-cal-head]{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}[data-settle-cal] [data-cal-head] strong{font-size:14px;font-weight:800}[data-settle-cal] [data-cal-week],[data-settle-cal] [data-cal-days]{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}[data-settle-cal] [data-cal-week] span{text-align:center;font-size:11px;color:#c5ced8}[data-settle-cal] button{height:32px;min-width:0;padding:0;border:0;background:transparent;color:#f4f7fb;font-size:13px;font-weight:700}[data-settle-cal] [data-cal-day][data-out]{color:#8b95a1}[data-settle-cal] [data-cal-day][data-on]{background:#2f6b4f;color:#f4f7fb}[data-settle-cal] [data-cal-day][data-today]{box-shadow:inset 0 0 0 1px #f4f7fb}[data-settle-pick]{position:relative;display:block}[data-settle-query] [data-span-toggle]{width:100%;height:38px;padding:0 8px;border:0;border-bottom:1px solid #6e7882;background:transparent;color:#f4f7fb;text-align:center;font-size:14px;font-weight:700;cursor:pointer}[data-span-menu]{position:absolute;top:42px;left:0;z-index:50;display:flex;flex-direction:column;min-width:168px;padding:6px 0;background:#15191d;border:1px solid #3a424a;box-shadow:0 10px 24px rgba(0,0,0,.45)}[data-span-menu] button{height:34px;width:100%;padding:0 12px;border:0;background:transparent;color:#e8eef6;text-align:center;font-size:13px;font-weight:700;cursor:pointer}[data-span-menu] button:hover{background:#22282e;color:#f4f7fb}[data-span-menu] button[data-on]{background:#24352e;color:#c8edd8}[data-cash-detail]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}[data-cash-detail] h3{margin:0 0 8px;font-size:15px;font-weight:800;color:#f4f7fb}[data-cash-detail] [data-cash-kind] div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #243038;font-size:13px;color:#c5ced8}[data-cash-detail] b{color:#f4f7fb;font-size:16px;font-weight:800}[data-cash-detail] [data-cash-profit] span,[data-cash-detail] [data-cash-profit] b{color:#d7ebe4}@media (max-width:980px){[data-cash-detail]{grid-template-columns:1fr}}[data-lower-board] h2,[data-lower-board] th,[data-lower-board] td,[data-lower-board] th *,[data-lower-board] td *{text-align:center!important}[data-lower-board] th{letter-spacing:0!important}[data-lower-board] td button,[data-lower-board] td a,[data-lower-board] td span,[data-lower-board] td div{display:inline-flex;justify-content:center!important;align-items:center;margin-left:auto;margin-right:auto}[data-lower-board] th[data-league-col],[data-lower-board] td[data-league-col]{text-align:left!important}[data-lower-board] th[data-league-col] *,[data-lower-board] td[data-league-col] *{text-align:left!important;justify-content:flex-start!important;margin-left:0!important;margin-right:auto!important}[data-lower-board] td[data-league-col] span,[data-lower-board] td[data-league-col] div{display:inline-flex!important;justify-content:flex-start!important;align-items:center;gap:6px;max-width:100%}[data-lower-board] th[data-home-col],[data-lower-board] td[data-home-col]{width:168px;min-width:168px;max-width:168px;text-align:right!important;padding-left:4px;padding-right:8px}[data-lower-board] th[data-vs-col],[data-lower-board] td[data-vs-col]{width:40px;min-width:40px;max-width:40px;text-align:center!important;padding-left:0;padding-right:0;color:#c5ced8;font-weight:800}[data-lower-board] th[data-away-col],[data-lower-board] td[data-away-col]{width:168px;min-width:168px;max-width:168px;text-align:left!important;padding-left:8px;padding-right:4px}[data-lower-board] td[data-home-col],[data-lower-board] td[data-away-col]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}[data-lower-board] td[data-home-col]>span,[data-lower-board] td[data-away-col]>span,[data-lower-board] td[data-home-col]>div,[data-lower-board] td[data-away-col]>div{display:inline-flex!important;align-items:center;gap:6px;margin:0!important;max-width:100%;width:auto}[data-lower-board] td[data-home-col]>span,[data-lower-board] td[data-home-col]>div{justify-content:flex-end!important;margin-left:auto!important;margin-right:0!important}[data-lower-board] td[data-away-col]>span,[data-lower-board] td[data-away-col]>div{justify-content:flex-start!important;margin-left:0!important;margin-right:auto!important}[data-lower-board] td[data-home-col] img,[data-lower-board] td[data-away-col] img{width:18px;height:18px;flex:0 0 auto}[data-settle-query]{justify-content:center;align-items:flex-end}[data-settle-query] label{align-items:center;text-align:center}[data-settle-query] [data-span-toggle]{text-align:center}[data-settle-board] h2,[data-cash-detail] h3{text-align:center!important}[data-cash-detail] [data-cash-kind] div{justify-content:center;gap:16px}[data-settle-board] [data-cash-kind]{padding:12px 14px 4px;background:#2c3532;border:1px solid #5a7a6a;border-top-width:3px}[data-settle-board] [data-cash-kind="자체 처리"]{background:#2c3532;border-color:#5a7a6a}[data-settle-board] [data-cash-kind="자체 처리"] h3,[data-settle-board] [data-cash-kind="자체 처리"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="자체 처리"] [data-cash-profit] b{color:#b8e6d2}[data-settle-board] [data-cash-kind="USDT"]{background:#35342c;border-color:#9a8560}[data-settle-board] [data-cash-kind="USDT"] h3,[data-settle-board] [data-cash-kind="USDT"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="USDT"] [data-cash-profit] b{color:#f0e4c0}[data-settle-board] [data-cash-kind="P2P"]{background:#2c3340;border-color:#6a7fa0}[data-settle-board] [data-cash-kind="P2P"] h3,[data-settle-board] [data-cash-kind="P2P"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="P2P"] [data-cash-profit] b{color:#d0def4}[data-settle-board] [data-settle-tone]{padding:12px 14px 16px;border:1px solid transparent;border-top-width:3px}[data-settle-board] [data-settle-tone="in"]{background:#2c3532;border-color:#5a7a6a}[data-settle-board] [data-settle-tone="in"] h2{color:#b8e6d2;border-bottom-color:#5a7a6a}[data-settle-board] [data-settle-tone="out"]{background:#352e32;border-color:#9a6a78}[data-settle-board] [data-settle-tone="out"] h2{color:#f4d4dc;border-bottom-color:#9a6a78}[data-settle-board] [data-settle-tone="sport"]{background:#32362e;border-color:#6e7a5a}[data-settle-board] [data-settle-tone="sport"] h2{color:#e2ecd0;border-bottom-color:#6e7a5a}[data-settle-board] [data-settle-tone="type"]{background:#2e3634;border-color:#5a7a72}[data-settle-board] [data-settle-tone="type"] h2{color:#d0ece4;border-bottom-color:#5a7a72}[data-settle-board] [data-settle-tone="casino"]{background:#322e38;border-color:#7a6a90}[data-settle-board] [data-settle-tone="casino"] h2{color:#e2d6f0;border-bottom-color:#7a6a90}[data-settle-board] [data-settle-tone="win"]{background:#35342c;border-color:#9a8560}[data-settle-board] [data-settle-tone="win"] h2{color:#f0e4c0;border-bottom-color:#9a8560}[data-settle-board] [data-settle-tone="loss"]{background:#322e38;border-color:#7a6a90}[data-settle-board] [data-settle-tone="loss"] h2{color:#e2d6f0;border-bottom-color:#7a6a90}[data-settle-sample]{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:4px;width:100%}[data-settle-sample][data-settle-list]{gap:0;margin-top:10px}[data-settle-list-head],[data-settle-list-row]{display:grid;grid-template-columns:40px minmax(96px,1fr) 104px;gap:8px;align-items:center;width:100%;padding:11px 6px;border-bottom:1px solid #243038}[data-settle-list-head][data-with-meta],[data-settle-list-row][data-with-meta]{grid-template-columns:40px minmax(96px,1fr) 52px 104px}[data-settle-list-head][data-plain],[data-settle-list-row][data-plain]{grid-template-columns:minmax(96px,1fr) 72px}[data-settle-list-head]{padding-top:0;padding-bottom:8px;border-bottom-color:#3a424a;font-size:11px;font-weight:700;color:#8b95a1}[data-settle-list-head] span,[data-settle-list-head] span:last-child,[data-settle-list-head] span:nth-child(3){text-align:center!important;justify-self:center}[data-settle-list-row]:last-child{border-bottom:0}[data-settle-list-row] em{font-style:normal;font-size:12px;font-weight:800;color:#8b95a1;font-variant-numeric:tabular-nums;text-align:center!important;justify-self:center}[data-settle-list-row] span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700;color:#e8eef6;text-align:center!important;justify-self:center}[data-settle-list-row] i{font-style:normal;font-size:12px;font-weight:700;color:#9aa3ad;text-align:center!important;justify-self:center;font-variant-numeric:tabular-nums}[data-settle-list-row] b{font-size:14px;font-weight:800;color:#f4f7fb;text-align:center!important;justify-self:center;font-variant-numeric:tabular-nums;white-space:nowrap}[data-settle-tone="win"] [data-settle-list-row] b{color:#f0e4c0}[data-settle-tone="loss"] [data-settle-list-row] b{color:#e2d6f0}[data-settle-tone="in"] [data-settle-list-row] b{color:#b8e6d2}[data-settle-tone="out"] [data-settle-list-row] b{color:#f4d4dc}[data-settle-board] [data-settle-tone] p{margin:0 0 2px;padding:0 6px;font-size:11px;line-height:1.45;color:#9aa3ad;text-align:center}[data-settle-size]{display:inline-flex;align-items:baseline;gap:3px;font-size:11px;font-weight:600;color:#8b95a1;white-space:nowrap}[data-settle-size] select{height:auto;min-width:0;margin:0;padding:0 0 1px;border:0;border-bottom:1px solid #5a6570;border-radius:0;background:transparent;color:#c5ced8;font-size:12px;font-weight:700;cursor:pointer}[data-settle-size] select:hover,[data-settle-size] select:focus{color:#f4f7fb;border-bottom-color:#c5ced8;outline:none}[data-settle-size] select option{background:#15191d;color:#f4f7fb}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]){display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:8px;padding-bottom:8px;border-bottom:1px solid #3a424a;margin-bottom:4px}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]) h2{grid-column:2;margin:0;padding:0;border:0;width:auto;text-align:center}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]) [data-settle-size]{grid-column:3;justify-self:end;align-self:center}[data-settle-tone="in"] [data-settle-sample-bar],[data-settle-tone="sport"] [data-settle-sample-bar]{background:#6fa889}[data-settle-tone="type"] [data-settle-sample-bar]{background:#6fa8a0}[data-settle-tone="casino"] [data-settle-sample-bar]{background:#8a78a8}[data-settle-tone="out"] [data-settle-sample-bar]{background:#b87a8a}[data-settle-tone="win"] [data-settle-sample-bar]{background:#b89a62}[data-settle-tone="loss"] [data-settle-sample-bar]{background:#8a78a8}[data-risk-board]{display:flex;flex-direction:column;gap:12px;margin-top:8px;padding:4px 0 8px}[data-risk-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow-x:auto}[data-risk-board] h2{display:inline-flex;margin:0;padding:0;font-size:16px;font-weight:800;color:#f4f7fb;text-align:center;border:0;line-height:1.2}[data-risk-filters]{margin:0 0 10px;padding:0 0 12px;border-bottom:1px solid #3a424a;text-align:center}[data-risk-filters] input,[data-risk-filters] select{color-scheme:dark;text-align:center}[data-risk-pick-rows]{width:100%}[data-risk-filter-row]{justify-content:center}[data-risk-chips] button{min-width:64px}[data-risk-board] table,[data-risk-members] table{width:100%;border-collapse:collapse;background:transparent}[data-risk-board] th,[data-risk-members] th{padding:0 10px 8px;font-size:11px;font-weight:700;color:#8b95a1;text-align:center;border:0;border-bottom:1px solid #2a3138;white-space:nowrap}[data-risk-board] td,[data-risk-members] td{padding:12px 10px;font-size:12px;line-height:1.35;text-align:center;border:0;border-bottom:1px solid #1c2228;white-space:nowrap}[data-risk-board] tbody tr:last-child td,[data-risk-members] tbody tr:last-child td{border-bottom:0}[data-risk-board] th,[data-risk-board] td,[data-risk-board] th *,[data-risk-board] td *,[data-risk-members] th,[data-risk-members] td,[data-risk-members] th *,[data-risk-members] td *{text-align:center!important}[data-risk-members]{margin-top:4px;text-align:center}[data-risk-summary]{display:flex;flex-direction:column;gap:12px}[data-risk-zones]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}[data-risk-zones] section{grid-column:auto!important}[data-risk-zones] h2{font-size:18px!important;margin:0 0 4px;text-align:center}[data-risk-zones] [data-zone-grid]{grid-template-columns:repeat(2,minmax(0,1fr))!important}[data-risk-members]+p,main section:has([data-risk-members]) p{text-align:center}'
+  style.textContent = '[data-status-zones]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}[data-status-zones] section{display:flex;flex-direction:column;gap:8px;width:auto;max-width:none;min-width:0;background:#191c1f;border:1px solid #2e343a;border-radius:12px;padding:8px 10px}[data-status-zones] h2{margin:0;font-size:24px;font-weight:700;line-height:1.2;text-align:center}[data-status-zones] [data-zone-grid]{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;width:100%;align-items:stretch}[data-status-zones] [data-zone-grid]>.bg-card,[data-status-zones] [data-zone-grid]>a{width:auto;height:auto;min-height:0;min-width:0}[data-status-zones] .bg-card{width:auto;height:auto;min-height:0;padding:8px 10px;justify-content:center;text-align:center}[data-status-zones] .truncate{overflow:visible;text-overflow:unset;white-space:nowrap}[data-status-zones] .text-muted{color:#e8eef6}[data-status-zones] section:has([data-zone-grid]>:nth-child(3)){grid-column:1 / -1}[data-status-zones] section[data-tone="in"]:has([data-zone-grid]),[data-status-zones] section[data-tone="out"]:has([data-zone-grid]){grid-column:auto}[data-status-zones] section[data-tone="in"] [data-zone-grid],[data-status-zones] section[data-tone="out"] [data-zone-grid]{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}[data-status-zones] section[data-tone="in"] .bg-card,[data-status-zones] section[data-tone="out"] .bg-card{flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px 4px}[data-status-zones] section[data-tone="in"] .bg-card>.min-w-0,[data-status-zones] section[data-tone="out"] .bg-card>.min-w-0{width:100%;min-width:0;text-align:center}[data-status-zones] section[data-tone="in"] .text-muted,[data-status-zones] section[data-tone="out"] .text-muted{white-space:normal;letter-spacing:0;font-size:10px;line-height:1.25}[data-status-zones] section[data-tone="in"] .text-lg,[data-status-zones] section[data-tone="out"] .text-lg{font-size:13px}[data-status-zones] section[data-tone="in"] .w-9,[data-status-zones] section[data-tone="out"] .w-9{width:26px;height:26px}[data-status-zones] section[data-tone="in"] .truncate,[data-status-zones] section[data-tone="out"] .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}[data-status-zones] section:has([data-zone-grid]>:nth-child(6)) [data-zone-grid]{grid-template-columns:repeat(3,minmax(0,1fr))}[data-status-zones] section:last-child:not(:has([data-zone-grid]>:nth-child(3))){grid-column:1 / -1}[data-status-zones] section[data-tone="access"]{background:#1a1e22;border-color:#2e343c}[data-status-zones] section[data-tone="in"]{background:#1a1f1d;border-color:#2e3632}[data-status-zones] section[data-tone="out"]{background:#1f1b1d;border-color:#363034}[data-status-zones] section[data-tone="wait-in"]{background:#1e1d1a;border-color:#363430}[data-status-zones] section[data-tone="wait-out"]{background:#1e1c1a;border-color:#363230}[data-status-zones] section[data-tone="sport"]{background:#1c1e1a;border-color:#323630}[data-status-zones] section[data-tone="casino"]{background:#1d1b1e;border-color:#343034}[data-status-zones] section[data-tone="dist"]{grid-column:1 / -1;background:#1a1e1e;border-color:#2e3434}[data-status-zones] section[data-tone="live"]{background:#1a1c20;border-color:#2e323a}[data-status-zones] section[data-tone="access"] .bg-card{background:#24292f;border-color:#353b44}[data-status-zones] section[data-tone="in"] .bg-card{background:#242b28;border-color:#353e3a}[data-status-zones] section[data-tone="out"] .bg-card{background:#2a2427;border-color:#3e3539}[data-status-zones] section[data-tone="wait-in"] .bg-card{background:#2a2824;border-color:#3e3b35}[data-status-zones] section[data-tone="wait-out"] .bg-card{background:#2a2624;border-color:#3e3935}[data-status-zones] section[data-tone="sport"] .bg-card{background:#262924;border-color:#393e35}[data-status-zones] section[data-tone="casino"] .bg-card{background:#282428;border-color:#3b353b}[data-status-zones] section[data-tone="dist"] .bg-card{background:#242a2a;border-color:#353e3e}[data-status-zones] section[data-tone="live"] .bg-card{background:#24272e;border-color:#353942}[data-status-zones] .w-9{background:#2e343c;color:#d5dbe3}[data-status-zones] [data-tone="access"] .w-9{background:#2e343c;color:#d7dee6}[data-status-zones] [data-tone="in"] .w-9{background:#2c3430;color:#d5e0db}[data-status-zones] [data-tone="out"] .w-9{background:#342e32;color:#e0d6db}[data-status-zones] [data-tone="wait-in"] .w-9{background:#34322c;color:#e0ddd4}[data-status-zones] [data-tone="wait-out"] .w-9{background:#34302c;color:#e0dbd4}[data-status-zones] [data-tone="sport"] .w-9{background:#30342c;color:#dce0d4}[data-status-zones] [data-tone="casino"] .w-9{background:#322e34;color:#ddd6e0}[data-status-zones] [data-tone="dist"] .w-9{background:#2e3634;color:#d5e0dc}[data-status-zones] [data-tone="bet"] .w-9{background:#30342c;color:#dce0d4}[data-status-zones] [data-tone="live"] .w-9{background:#2e323c;color:#d6dae2}[data-lower-board]{display:flex;flex-direction:column;gap:0;margin-top:28px;padding:6px 2px 24px;background:#101316}[data-lower-board] [data-lower-row],[data-lower-board] [data-rank-frame],[data-lower-board] [data-match-slot]{padding:22px 6px 4px;border-top:1px solid #2a3138}[data-lower-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow-x:auto}[data-lower-board] section>div:first-child{display:block;width:100%;border:0;padding:0 0 8px;background:transparent}[data-lower-board] h2{display:block;width:100%;margin:0 0 16px;padding:0 0 10px;font-size:22px;font-weight:800;letter-spacing:0;line-height:1.35;color:#f4f7fb;text-align:center;border-bottom:1px solid #3a424a}[data-lower-board] p{text-align:center}[data-lower-board] .px-4,[data-lower-board] .p-4,[data-lower-board] .py-3{padding:0}[data-lower-board] [data-flow] .px-4>.flex{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border-top:1px solid #2a3138;border-bottom:1px solid #2a3138}[data-lower-board] [data-flow] .px-4>.flex>span{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:transparent;border:0;border-radius:0;border-right:1px solid #2a3138;padding:16px 14px 12px}[data-lower-board] [data-flow] .px-4>.flex>span b{font-size:28px;line-height:1;font-weight:700;letter-spacing:-.04em}[data-lower-board] [data-flow] .px-4>.flex>a{grid-column:1 / -1;margin:10px 0 0;width:max-content;color:#d5dbe2;text-decoration:underline;text-underline-offset:3px}[data-lower-board] [data-snap] dl{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;border-top:1px solid #2a3138;border-bottom:1px solid #2a3138}[data-lower-board] [data-snap] dl>div{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:transparent;border:0;border-radius:0;border-right:1px solid #2a3138;padding:16px 12px 12px}[data-lower-board] [data-snap] .border-t{display:none}[data-lower-board] [data-snap] dd,[data-lower-board] [data-snap] .text-right{text-align:left}[data-lower-board] [data-snap] .font-black{font-size:22px;letter-spacing:-.04em;line-height:1}[data-lower-board] [data-snap] a,[data-lower-board] a.mt-auto{display:inline-flex;margin-top:12px;padding:0;background:transparent;color:#d5dbe2;text-decoration:underline;text-underline-offset:3px;justify-content:flex-start}[data-lower-board] svg{display:block;width:100%;max-height:150px}[data-lower-board] [data-rank-grid]{display:grid;grid-template-columns:minmax(0,1fr);gap:28px;align-items:start}[data-lower-board] [data-rank-frame]>h2{margin-bottom:16px}@media (max-width:980px){[data-lower-board] [data-lower-row="work"],[data-lower-board] [data-rank-grid],[data-lower-board] [data-flow] .px-4>.flex,[data-lower-board] [data-snap] dl{grid-template-columns:1fr}[data-lower-board] [data-flow] .px-4>.flex>span,[data-lower-board] [data-snap] dl>div{border-right:0;border-bottom:1px solid #2a3138}[data-settle-legacy]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}[data-settle-board]{display:flex;flex-direction:column;gap:22px;margin-top:8px;padding:4px 0 32px}[data-settle-query]{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end;padding:0 0 14px;border-bottom:1px solid #3a424a}[data-settle-query] label{display:flex;flex-direction:column;gap:6px;min-width:148px;font-size:12px;font-weight:700;color:#9aa3ad}[data-settle-query] input,[data-settle-query] select{height:38px;border:0;border-bottom:1px solid #6e7882;border-radius:0;background:transparent;color:#f4f7fb;padding:0 2px;font-size:14px}[data-settle-query] button{height:38px;padding:0 18px;border:1px solid #c5ced8;border-radius:0;background:transparent;color:#f4f7fb;font-size:13px;font-weight:800}[data-settle-query] [data-settle-search]{min-width:84px;background:#24303a;border-color:#9aa3ad;color:#f4f7fb;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .1s ease,box-shadow .15s ease}[data-settle-query] [data-settle-search]:hover{background:#334554;border-color:#e8eef6;color:#fff}[data-settle-query] [data-settle-search]:active,[data-settle-query] [data-settle-search][data-on]{background:#1a222a;border-color:#c5ced8;transform:translateY(1px)}[data-settle-query] [data-settle-search]:focus-visible{outline:1px solid #c5ced8;outline-offset:2px}[data-settle-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible}[data-settle-board] h2{display:block;width:100%;margin:0 0 12px;padding:0 0 8px;font-size:18px;font-weight:800;letter-spacing:0;line-height:1.35;color:#f4f7fb;text-align:left;border-bottom:1px solid #3a424a}[data-settle-board] section>div:first-child{display:block;width:100%;border:0;padding:0;background:transparent}[data-settle-board] .uppercase{text-transform:none;letter-spacing:0}[data-settle-board] .w-9,[data-settle-band="plan"] .h-9{display:none}[data-settle-metrics]{display:block}[data-settle-metrics]>.grid,[data-settle-metrics]>.grid:last-child{display:grid;grid-template-columns:1fr 1fr;gap:0}[data-settle-metrics] .bg-card{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;min-width:0;background:transparent;border:0;border-radius:0;border-bottom:1px solid #243038;padding:11px 8px}[data-settle-metrics] .min-w-0{display:flex;flex:1;align-items:center;justify-content:space-between;gap:12px;min-width:0}[data-settle-metrics] .text-lg{font-size:18px;font-weight:800}[data-settle-metrics] .truncate{overflow:visible;text-overflow:unset;white-space:normal}[data-settle-board] [data-settle-tone] .p-4{display:flex;flex-direction:column;align-items:stretch}[data-settle-board] [data-settle-tone]>[data-settle-sample]{align-items:stretch}[data-settle-band="plan"] .p-4{display:flex;flex-direction:column;gap:8px;padding:0}[data-settle-band="plan"] h2{text-align:center!important}[data-settle-plan]{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}[data-plan-hero]{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;padding:4px 2px 12px;border-bottom:1px solid #3a424a}[data-plan-hero] span{font-size:13px;font-weight:800;color:#c5ced8}[data-plan-hero] b{font-size:28px;font-weight:800;color:#f4f7fb;letter-spacing:-.03em}[data-plan-grid]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;width:100%}[data-plan-grid]>div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px 10px;border-bottom:1px solid #243038;border-right:1px solid #243038;text-align:center}[data-plan-grid]>div:last-child{border-right:0}[data-plan-grid] span{font-size:12px;font-weight:700;color:#9aa3ad}[data-plan-grid] b{font-size:18px;font-weight:800;color:#f4f7fb}[data-plan-note]{margin:0;max-width:52rem;font-size:12px;line-height:1.55;color:#9aa3ad;text-align:center}@media (max-width:980px){[data-plan-grid]{grid-template-columns:1fr}[data-plan-grid]>div{border-right:0}[data-settle-band="spread"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}[data-settle-split]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;min-width:0;align-items:stretch}[data-settle-band="rank"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}[data-settle-band="edge"]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}@media (max-width:1100px){[data-settle-band="edge"]{grid-template-columns:repeat(2,minmax(0,1fr))}@media (max-width:640px){[data-settle-band="edge"]{grid-template-columns:1fr}[data-settle-mix-wrap]{display:flex;align-items:center;justify-content:center;gap:22px;min-width:0;width:100%}[data-settle-mix-chart]{position:relative;flex:0 0 150px;width:150px;height:150px}[data-settle-mix-chart] svg{display:block;width:150px;height:150px;max-height:none}[data-settle-mix-center]{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none}[data-settle-mix-center] span{font-size:10px;font-weight:800;color:#9aa3ad}[data-settle-mix-center] b{font-size:14px;font-weight:900;color:#f4f7fb;letter-spacing:-.02em}[data-settle-mix-legend]{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:0;flex:1 1 auto;max-width:280px}[data-settle-mix-row]{display:grid;grid-template-columns:10px minmax(0,1fr) 40px 72px;align-items:center;justify-items:start;gap:8px;font-size:12px;width:100%}[data-settle-mix-row] i{display:block;width:10px;height:10px;border-radius:3px;flex:0 0 auto}[data-settle-mix-row] span{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:#c5ced8;text-align:left;white-space:nowrap}[data-settle-mix-row] em{font-style:normal;color:#9aa3ad;font-variant-numeric:tabular-nums;text-align:right;justify-self:end}[data-settle-mix-row] b{font-weight:800;color:#f4f7fb;font-variant-numeric:tabular-nums;text-align:right;justify-self:end}@media (max-width:640px){[data-settle-mix-wrap]{flex-direction:column;align-items:center}[data-settle-hold]{display:none}@media (max-width:980px){[data-settle-metrics]>.grid,[data-settle-metrics]>.grid:last-child{grid-template-columns:1fr}[data-settle-query] [data-settle-date]{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-width:168px}[data-settle-query] [data-settle-date] input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}[data-settle-query] [data-settle-face]{display:flex;align-items:center;justify-content:center;width:100%;height:38px;padding:0;border:0;border-bottom:1px solid #6e7882;border-radius:0;background:transparent;color:#f4f7fb;font-size:14px;font-weight:700;text-align:center;letter-spacing:.02em;cursor:pointer}[data-settle-query] [data-open-cal]{position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:1}[data-settle-query] [data-open-cal]{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid #6e7882;background:#1c2126;color:#f4f7fb;cursor:pointer}[data-settle-query] input[type="date"]::-webkit-calendar-picker-indicator{opacity:0;width:0;padding:0;margin:0}[data-settle-query] [data-settle-span-label]{min-width:168px}[data-settle-query] select{color-scheme:dark;background:#1c2126;color:#f4f7fb}[data-settle-query] select option{background:#1c2126;color:#f4f7fb}[data-settle-date]{position:relative}[data-settle-cal]{position:absolute;top:42px;left:0;z-index:50;width:280px;padding:10px;background:#1c2126;border:1px solid #8b95a1;color:#f4f7fb}[data-settle-cal] [data-cal-head]{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}[data-settle-cal] [data-cal-head] strong{font-size:14px;font-weight:800}[data-settle-cal] [data-cal-week],[data-settle-cal] [data-cal-days]{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}[data-settle-cal] [data-cal-week] span{text-align:center;font-size:11px;color:#c5ced8}[data-settle-cal] button{height:32px;min-width:0;padding:0;border:0;background:transparent;color:#f4f7fb;font-size:13px;font-weight:700}[data-settle-cal] [data-cal-day][data-out]{color:#8b95a1}[data-settle-cal] [data-cal-day][data-on]{background:#2f6b4f;color:#f4f7fb}[data-settle-cal] [data-cal-day][data-today]{box-shadow:inset 0 0 0 1px #f4f7fb}[data-settle-pick]{position:relative;display:block}[data-settle-query] [data-span-toggle]{width:100%;height:38px;padding:0 8px;border:0;border-bottom:1px solid #6e7882;background:transparent;color:#f4f7fb;text-align:center;font-size:14px;font-weight:700;cursor:pointer}[data-span-menu]{position:absolute;top:42px;left:0;z-index:50;display:flex;flex-direction:column;min-width:168px;padding:6px 0;background:#15191d;border:1px solid #3a424a;box-shadow:0 10px 24px rgba(0,0,0,.45)}[data-span-menu] button{height:34px;width:100%;padding:0 12px;border:0;background:transparent;color:#e8eef6;text-align:center;font-size:13px;font-weight:700;cursor:pointer}[data-span-menu] button:hover{background:#22282e;color:#f4f7fb}[data-span-menu] button[data-on]{background:#24352e;color:#c8edd8}[data-cash-detail]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}[data-cash-detail] h3{margin:0 0 8px;font-size:15px;font-weight:800;color:#f4f7fb}[data-cash-detail] [data-cash-kind] div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #243038;font-size:13px;color:#c5ced8}[data-cash-detail] b{color:#f4f7fb;font-size:16px;font-weight:800}[data-cash-detail] [data-cash-profit] span,[data-cash-detail] [data-cash-profit] b{color:#d7ebe4}@media (max-width:980px){[data-cash-detail]{grid-template-columns:1fr}[data-settle-query]{justify-content:center;align-items:flex-end}[data-settle-query] label{align-items:center;text-align:center}[data-settle-query] [data-span-toggle]{text-align:center}[data-settle-board] h2,[data-cash-detail] h3{text-align:center!important}[data-cash-detail] [data-cash-kind] div{justify-content:center;gap:16px}[data-settle-board] [data-cash-kind]{padding:12px 14px 4px;background:#2c3532;border:1px solid #5a7a6a;border-top-width:3px}[data-settle-board] [data-cash-kind="자체 처리"]{background:#2c3532;border-color:#5a7a6a}[data-settle-board] [data-cash-kind="자체 처리"] h3,[data-settle-board] [data-cash-kind="자체 처리"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="자체 처리"] [data-cash-profit] b{color:#b8e6d2}[data-settle-board] [data-cash-kind="USDT"]{background:#35342c;border-color:#9a8560}[data-settle-board] [data-cash-kind="USDT"] h3,[data-settle-board] [data-cash-kind="USDT"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="USDT"] [data-cash-profit] b{color:#f0e4c0}[data-settle-board] [data-cash-kind="P2P"]{background:#2c3340;border-color:#6a7fa0}[data-settle-board] [data-cash-kind="P2P"] h3,[data-settle-board] [data-cash-kind="P2P"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="P2P"] [data-cash-profit] b{color:#d0def4}[data-settle-board] [data-settle-tone]{padding:12px 14px 16px;border:1px solid transparent;border-top-width:3px}[data-settle-board] [data-settle-tone="in"]{background:#2c3532;border-color:#5a7a6a}[data-settle-board] [data-settle-tone="in"] h2{color:#b8e6d2;border-bottom-color:#5a7a6a}[data-settle-board] [data-settle-tone="out"]{background:#352e32;border-color:#9a6a78}[data-settle-board] [data-settle-tone="out"] h2{color:#f4d4dc;border-bottom-color:#9a6a78}[data-settle-board] [data-settle-tone="sport"]{background:#32362e;border-color:#6e7a5a}[data-settle-board] [data-settle-tone="sport"] h2{color:#e2ecd0;border-bottom-color:#6e7a5a}[data-settle-board] [data-settle-tone="type"]{background:#2e3634;border-color:#5a7a72}[data-settle-board] [data-settle-tone="type"] h2{color:#d0ece4;border-bottom-color:#5a7a72}[data-settle-board] [data-settle-tone="casino"]{background:#322e38;border-color:#7a6a90}[data-settle-board] [data-settle-tone="casino"] h2{color:#e2d6f0;border-bottom-color:#7a6a90}[data-settle-board] [data-settle-tone="win"]{background:#35342c;border-color:#9a8560}[data-settle-board] [data-settle-tone="win"] h2{color:#f0e4c0;border-bottom-color:#9a8560}[data-settle-board] [data-settle-tone="loss"]{background:#322e38;border-color:#7a6a90}[data-settle-board] [data-settle-tone="loss"] h2{color:#e2d6f0;border-bottom-color:#7a6a90}[data-settle-sample]{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:4px;width:100%}[data-settle-board] [data-settle-tone] p{margin:0 0 2px;padding:0 6px;font-size:11px;line-height:1.45;color:#9aa3ad;text-align:center}[data-settle-size]{display:inline-flex;align-items:baseline;gap:3px;font-size:11px;font-weight:600;color:#8b95a1;white-space:nowrap}[data-settle-size] select{height:auto;min-width:0;margin:0;padding:0 0 1px;border:0;border-bottom:1px solid #5a6570;border-radius:0;background:transparent;color:#c5ced8;font-size:12px;font-weight:700;cursor:pointer}[data-settle-size] select:hover,[data-settle-size] select:focus{color:#f4f7fb;border-bottom-color:#c5ced8;outline:none}[data-settle-size] select option{background:#15191d;color:#f4f7fb}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]){display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:8px;padding-bottom:8px;border-bottom:1px solid #3a424a;margin-bottom:4px}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]) h2{grid-column:2;margin:0;padding:0;border:0;width:auto;text-align:center}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]) [data-settle-size]{grid-column:3;justify-self:end;align-self:center}[data-settle-tone="in"] [data-settle-sample-bar],[data-settle-tone="sport"] [data-settle-sample-bar]{background:#6fa889}[data-settle-tone="type"] [data-settle-sample-bar]{background:#6fa8a0}[data-settle-tone="casino"] [data-settle-sample-bar]{background:#8a78a8}[data-settle-tone="out"] [data-settle-sample-bar]{background:#b87a8a}[data-settle-tone="win"] [data-settle-sample-bar]{background:#b89a62}[data-settle-tone="loss"] [data-settle-sample-bar]{background:#8a78a8}[data-risk-board]{display:flex;flex-direction:column;gap:12px;margin-top:8px;padding:4px 0 8px}[data-risk-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow-x:auto}[data-risk-board] h2{display:inline-flex;margin:0;padding:0;font-size:16px;font-weight:800;color:#f4f7fb;text-align:center;border:0;line-height:1.2}[data-risk-filters]{margin:0 0 10px;padding:0 0 12px;border-bottom:1px solid #3a424a;text-align:center}[data-risk-filters] input,[data-risk-filters] select{color-scheme:dark;text-align:center}[data-risk-pick-rows]{width:100%}[data-risk-filter-row]{justify-content:center}[data-risk-chips] button{min-width:64px}[data-risk-members]{margin-top:4px;text-align:center}[data-risk-summary]{display:flex;flex-direction:column;gap:12px}[data-risk-zones]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}[data-risk-zones] section{grid-column:auto!important}[data-risk-zones] h2{font-size:18px!important;margin:0 0 4px;text-align:center}[data-risk-zones] [data-zone-grid]{grid-template-columns:repeat(2,minmax(0,1fr))!important}[data-risk-members]+p,main section:has([data-risk-members]) p{text-align:center}'
+  settleAlignStyle()
+}
+
+
+function settleAlignStyle() {
+  let style = document.getElementById('nex-settle-align')
+  if (!style) {
+    style = document.createElement('style')
+    style.id = 'nex-settle-align'
+    document.head.appendChild(style)
+  }
+  style.textContent = [
+    '[data-settle-query]{position:sticky;top:56px;z-index:35;display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-end;gap:14px 20px;margin:0 -20px;padding:12px 20px 14px;background:#131517;border-bottom:1px solid #3a424a;box-shadow:0 8px 16px rgba(0,0,0,.28)}',
+    '[data-settle-query] label{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}',
+    '[data-settle-query] [data-settle-face],[data-settle-query] [data-span-toggle]{text-align:center;justify-content:center}',
+    '[data-settle-query] [data-settle-search]{align-self:flex-end}',
+    '[data-settle-plan]{gap:0}',
+    '[data-plan-hero]{min-height:88px;padding:0 8px;gap:8px;justify-content:center}',
+    '[data-plan-hero] span,[data-plan-hero] b{margin:0;line-height:1.15;display:block}',
+    '[data-plan-grid]{align-items:stretch}',
+    '[data-plan-grid]>div{min-height:96px;padding:0 10px;gap:8px;justify-content:center;align-items:center}',
+    '[data-plan-grid] span,[data-plan-grid] b{margin:0;line-height:1.15;display:block;width:100%;text-align:center}',
+    '[data-settle-band="plan"] .bg-card,[data-settle-metrics] .bg-card{flex-direction:column;align-items:center;justify-content:center;min-height:96px;padding:0 10px;gap:8px;text-align:center}',
+    '[data-settle-band="plan"] .min-w-0,[data-settle-metrics] .min-w-0{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:100%;text-align:center}',
+    '[data-settle-band="plan"] .text-muted,[data-settle-band="plan"] .text-lg,[data-settle-metrics] .text-muted,[data-settle-metrics] .text-lg{margin:0;line-height:1.15;text-align:center;width:100%}',
+    '[data-settle-board] h2,[data-settle-board] h3,[data-cash-detail] h3{text-align:center!important}',
+    '[data-cash-detail] [data-cash-kind] div{justify-content:center;align-items:center}',
+    '[data-settle-mix-wrap]{justify-content:center}',
+    '[data-settle-mix-legend]{margin-left:auto;margin-right:auto}',
+    '[data-settle-mix-row]{justify-items:center}',
+    '[data-settle-mix-row] span{text-align:center}',
+    '[data-settle-mix-row] em,[data-settle-mix-row] b{text-align:center;justify-self:center}',
+    '[data-settle-band="spread"],[data-settle-split]{align-items:start}',
+    '[data-settle-board] [data-settle-tone="casino"],[data-settle-board] [data-settle-tone="sport"],[data-settle-board] [data-settle-tone="type"]{height:auto;padding:8px 12px}',
+    '[data-settle-board] [data-settle-tone="casino"]>div:first-child,[data-settle-board] [data-settle-tone="sport"]>div:first-child,[data-settle-board] [data-settle-tone="type"]>div:first-child{padding:0 0 6px;margin:0;border:0}',
+    '[data-settle-board] [data-settle-tone="casino"] h2,[data-settle-board] [data-settle-tone="sport"] h2,[data-settle-board] [data-settle-tone="type"] h2{margin:0;padding:0 0 6px}',
+    '[data-settle-board] [data-settle-tone="casino"] .p-4,[data-settle-board] [data-settle-tone="sport"] .p-4,[data-settle-board] [data-settle-tone="type"] .p-4{padding:4px 0 2px}',
+    '[data-settle-tone="casino"]{display:flex;flex-direction:column}',
+    '[data-settle-tone="casino"] .p-4{flex:0 0 auto;min-height:0}',
+    '[data-settle-tone="casino"] [data-settle-mix-wrap]{width:100%;min-height:0;gap:20px;padding:4px 8px 6px;align-items:center;justify-content:center}',
+    '[data-settle-tone="sport"] [data-settle-sample],[data-settle-tone="type"] [data-settle-sample]{margin-top:0}',
+    '[data-settle-tone="casino"] [data-settle-mix-chart]{flex:0 0 220px;width:220px;height:220px}',
+    '[data-settle-tone="casino"] [data-settle-mix-chart] svg{width:220px;height:220px}',
+    '[data-settle-tone="casino"] [data-settle-mix-center]{gap:4px}',
+    '[data-settle-tone="casino"] [data-settle-mix-center] span{font-size:14px}',
+    '[data-settle-tone="casino"] [data-settle-mix-center] b{font-size:24px}',
+    '[data-settle-tone="casino"] [data-settle-mix-legend]{max-width:none;flex:1 1 220px;gap:14px}',
+    '[data-settle-tone="casino"] [data-settle-mix-row]{grid-template-columns:12px minmax(0,1fr) 48px 88px;gap:12px;font-size:15px}',
+    '[data-settle-tone="casino"] [data-settle-mix-row] i{width:12px;height:12px}',
+    '[data-settle-tone="casino"] [data-settle-mix-row] b{font-size:16px}',
+    '[data-settle-sample].nex-board{margin-top:4px}',
+  ].join('')
 }
 
 function kstTodayYmd() {
@@ -4912,18 +5021,18 @@ function mountBetHistory() {
           (row.legs || []).map((leg) => `<div class="flex flex-wrap gap-3 border-b border-edge-soft py-1"><span>${escHtml(leg.matchName)}</span><span class="text-dim">${escHtml(leg.marketName)} · ${escHtml(leg.outcomeName)}</span><span class="text-gold">${escHtml(String(leg.odds))}</span><span>${escHtml(leg.statusLabel)}</span></div>`).join('') || '<div class="text-dim">다리가 없습니다.</div>'
         }</td></tr>`
         : ''
-      return `<tr class="border-b border-edge-soft" data-detail="${row.id}">
-        <td class="px-3 py-2 text-muted whitespace-nowrap">${escHtml(row.placedAt.replace('T', ' ').slice(0, 16))}</td>
-        <td class="px-3 py-2 font-bold">${escHtml(row.nick)} (${escHtml(row.login)})</td>
-        <td class="px-3 py-2">${escHtml(row.matchName)}</td>
-        <td class="px-3 py-2">${escHtml(row.market)} · ${escHtml(row.line || row.outcome || '-')}</td>
-        <td class="px-3 py-2 text-right">${escHtml(String(row.odds))}</td>
-        <td class="px-3 py-2 text-right font-bold tabular-nums">${money(row.stake)}</td>
-        <td class="px-3 py-2 text-right text-gold font-bold tabular-nums">${money(row.potentialPayout)}</td>
-        <td class="px-3 py-2"><span class="${STATUS_CLASS[row.status] || STATUS_CLASS['진행 중']}">${escHtml(row.statusLabel)}</span></td>
-        <td class="px-3 py-2">${escHtml(row.folderLabel)}</td>
-        <td class="px-3 py-2">${escHtml(row.liveLabel)}</td>
-        <td class="px-3 py-2">${open}</td>
+      return `<tr data-detail="${row.id}">
+        <td class="nex-col-date">${escHtml(row.placedAt.replace('T', ' ').slice(0, 16))}</td>
+        <td class="nex-col-text">${escHtml(row.nick)} (${escHtml(row.login)})</td>
+        <td class="nex-col-text">${escHtml(row.matchName)}</td>
+        <td class="nex-col-text">${escHtml(row.market)} · ${escHtml(row.line || row.outcome || '-')}</td>
+        <td class="nex-col-count">${escHtml(String(row.odds))}</td>
+        <td class="nex-col-money">${money(row.stake)}</td>
+        <td class="nex-col-money">${money(row.potentialPayout)}</td>
+        <td class="nex-col-status"><span class="${STATUS_CLASS[row.status] || STATUS_CLASS['진행 중']}">${escHtml(row.statusLabel)}</span></td>
+        <td class="nex-col-text">${escHtml(row.folderLabel)}</td>
+        <td class="nex-col-text">${escHtml(row.liveLabel)}</td>
+        <td class="nex-col-action">${open}</td>
       </tr>${legs}`
     }).join('')
     box.innerHTML = `<div id="bet-history-root" class="space-y-4">
@@ -4976,15 +5085,15 @@ function mountBetHistory() {
           <button class="h-9 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">검색</button>
           <button type="button" data-reset class="h-9 rounded-lg border border-edge px-4 text-sm font-bold text-dim">초기화</button>
         </form>
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead class="text-xs text-muted"><tr>
-              <th class="px-3 py-2 text-left">배팅 시각</th><th class="px-3 py-2 text-left">회원</th><th class="px-3 py-2 text-left">경기</th>
-              <th class="px-3 py-2 text-left">마켓·결과</th><th class="px-3 py-2 text-right">배당</th><th class="px-3 py-2 text-right">배팅금</th>
-              <th class="px-3 py-2 text-right">예상 지급액</th><th class="px-3 py-2 text-left">상태</th><th class="px-3 py-2 text-left">폴더</th>
-              <th class="px-3 py-2 text-left">구분</th><th class="px-3 py-2 text-left">다리</th>
+        <div class="nex-list-wrap">
+          <table class="nex-list" data-kind="bets">
+            <thead><tr>
+              <th class="nex-col-date">배팅 시각</th><th class="nex-col-text">회원</th><th class="nex-col-text">경기</th>
+              <th class="nex-col-text">마켓·결과</th><th class="nex-col-count">배당</th><th class="nex-col-money">배팅금</th>
+              <th class="nex-col-money">예상 지급액</th><th class="nex-col-status">상태</th><th class="nex-col-text">폴더</th>
+              <th class="nex-col-text">구분</th><th class="nex-col-text">다리</th>
             </tr></thead>
-            <tbody>${rows || '<tr><td class="px-3 py-10 text-center text-sm text-dim" colspan="11">표시할 배팅이 없습니다.</td></tr>'}</tbody>
+            <tbody>${rows || '<tr><td class="nex-col-text" colspan="11">표시할 배팅이 없습니다.</td></tr>'}</tbody>
           </table>
         </div>
         <div class="px-4 py-3">${state.nextCursor ? '<button type="button" data-more class="h-9 rounded-lg border border-edge px-3 text-xs font-bold text-dim">더 보기</button>' : ''}</div>
@@ -5089,9 +5198,9 @@ function mountBetHistory() {
           return
         }
         const detail = await res.json()
-        const ledger = (detail.ledger || []).map((move) => `<tr class="border-b border-edge-soft"><td class="px-2 py-1">${escHtml(move.kind)}</td><td class="px-2 py-1 text-right tabular-nums">${money(move.amount)}</td><td class="px-2 py-1 text-right tabular-nums">${money(move.balanceAfter)}</td><td class="px-2 py-1">${escHtml(move.reason)}</td><td class="px-2 py-1 text-muted">${escHtml(String(move.createdAt).replace('T', ' ').slice(0, 16))}</td></tr>`).join('')
+        const ledger = (detail.ledger || []).map((move) => `<tr><td class="nex-col-text">${escHtml(move.kind)}</td><td class="nex-col-money">${money(move.amount)}</td><td class="nex-col-money">${money(move.balanceAfter)}</td><td class="nex-col-text">${escHtml(move.reason)}</td><td class="nex-col-date">${escHtml(String(move.createdAt).replace('T', ' ').slice(0, 16))}</td></tr>`).join('')
         boxEl.classList.remove('hidden')
-        boxEl.innerHTML = `<div class="font-bold mb-2">배팅 #${detail.id} 원장</div><table class="w-full text-sm"><thead class="text-xs text-muted"><tr><th class="px-2 py-1 text-left">종류</th><th class="px-2 py-1 text-right">금액</th><th class="px-2 py-1 text-right">잔액</th><th class="px-2 py-1 text-left">사유</th><th class="px-2 py-1 text-left">시각</th></tr></thead><tbody>${ledger || '<tr><td class="px-2 py-3 text-dim" colspan="5">원장 기록이 없습니다.</td></tr>'}</tbody></table>`
+        boxEl.innerHTML = `<div class="font-bold mb-2">배팅 #${detail.id} 원장</div><div class="nex-list-wrap"><table class="nex-list"><thead><tr><th class="nex-col-text">종류</th><th class="nex-col-money">금액</th><th class="nex-col-money">잔액</th><th class="nex-col-text">사유</th><th class="nex-col-date">시각</th></tr></thead><tbody>${ledger || '<tr><td class="nex-col-text" colspan="5">원장 기록이 없습니다.</td></tr>'}</tbody></table></div>`
       })
     })
   }
@@ -5102,6 +5211,7 @@ function mountBetHistory() {
 }
 
 function init() {
+  ensureNexTableCss()
   boardLayout()
   paintTopSums()
   const rendered = mountBetHistory() || renderPlaceholder()
@@ -5194,6 +5304,7 @@ function init() {
   })
   if (!rendered) refreshTables()
   else refreshTables()
+  upgradeAdminTables()
   document.documentElement.dataset.nexInit = '1'
 }
 

@@ -1,0 +1,155 @@
+/* NEX 관리자 표 공통. 화면별 text-align / 1fr 패치 금지. */
+
+:root {
+  --nex-table-gap: 28px;
+  --nex-table-row: 36px;
+  --nex-table-font: 13px;
+  --nex-table-head: 11px;
+  --nex-table-fg: #f2f4f6;
+  --nex-table-muted: #8b95a1;
+  --nex-table-line: #243038;
+  --nex-table-head-line: #3a424a;
+  --nex-table-stripe: rgba(255, 255, 255, 0.025);
+  --nex-table-hover: #272c31;
+  --nex-table-up: #22e07a;
+  --nex-table-down: #f4434f;
+}
+
+/* A. 요약 순위표 — 글자 길이만큼 칸, 칸 사이 간격 고정, 표 덩어리 가운데 */
+
+.nex-board {
+  display: grid;
+  width: max-content;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  column-gap: var(--nex-table-gap);
+  row-gap: 0;
+  justify-content: center;
+  justify-items: stretch;
+  align-items: center;
+}
+
+.nex-board[data-cols="2"] { grid-template-columns: repeat(2, max-content); }
+.nex-board[data-cols="3"] { grid-template-columns: repeat(3, max-content); }
+.nex-board[data-cols="4"] { grid-template-columns: repeat(4, max-content); }
+.nex-board[data-cols="5"] { grid-template-columns: repeat(5, max-content); }
+
+.nex-board-row {
+  display: contents;
+}
+
+.nex-board-row > * {
+  box-sizing: border-box;
+  min-height: var(--nex-table-row);
+  padding: 8px 0;
+  font-size: var(--nex-table-font);
+  line-height: 1.3;
+  color: var(--nex-table-fg);
+  border-bottom: 1px solid var(--nex-table-line);
+  background: transparent;
+}
+
+.nex-board-head > * {
+  min-height: 0;
+  padding: 0 0 8px;
+  font-size: var(--nex-table-head);
+  font-weight: 700;
+  color: var(--nex-table-muted);
+  border-bottom-color: var(--nex-table-head-line);
+}
+
+.nex-board-row:nth-child(odd):not(.nex-board-head) > * {
+  background: var(--nex-table-stripe);
+}
+
+.nex-board-row:not(.nex-board-head):hover > * {
+  background: var(--nex-table-hover);
+}
+
+.nex-board-row:last-child > * {
+  border-bottom: 0;
+}
+
+/* B. 데이터 목록표 — 카드 너비, 칸 종류별 고정 폭, 좁으면 표만 가로 스크롤 */
+
+.nex-list-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.nex-list {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  background: transparent;
+}
+
+.nex-list th,
+.nex-list td {
+  box-sizing: border-box;
+  height: var(--nex-table-row);
+  padding: 8px 10px;
+  font-size: var(--nex-table-font);
+  line-height: 1.3;
+  color: var(--nex-table-fg);
+  border: 0;
+  border-bottom: 1px solid var(--nex-table-line);
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nex-list th {
+  font-size: var(--nex-table-head);
+  font-weight: 700;
+  color: var(--nex-table-muted);
+  border-bottom-color: var(--nex-table-head-line);
+}
+
+.nex-list tbody tr:nth-child(even) td {
+  background: var(--nex-table-stripe);
+}
+
+.nex-list tbody tr:hover td {
+  background: var(--nex-table-hover);
+}
+
+.nex-list tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.nex-list .nex-col-rank { width: 56px; }
+.nex-list .nex-col-status { width: 88px; }
+.nex-list .nex-col-date { width: 120px; }
+.nex-list .nex-col-action { width: 88px; }
+.nex-list .nex-col-count { width: 72px; }
+.nex-list .nex-col-money { width: 120px; }
+.nex-list .nex-col-text { width: 160px; }
+
+.nex-list[data-kind="bets"] .nex-col-text { width: 140px; }
+.nex-list[data-kind="users"] .nex-col-text { width: 150px; }
+
+/* 공통 정렬: 칸 종류만으로 결정 */
+
+.nex-col-rank,
+.nex-col-status,
+.nex-col-date,
+.nex-col-action {
+  text-align: center !important;
+}
+
+.nex-col-text {
+  text-align: left !important;
+}
+
+.nex-col-count,
+.nex-col-money {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.nex-col-money[data-tone="up"] { color: var(--nex-table-up); }
+.nex-col-money[data-tone="down"] { color: var(--nex-table-down); }

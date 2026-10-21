@@ -13,6 +13,8 @@
     "dev:api": "yarn workspace api dev",
     "build": "yarn workspace web build && yarn workspace api build",
     "start": "node --env-file=apps/api/.env apps/api/dist/main.js",
-    "deploy:mark": "node scripts/mark-manual-deploy.mjs"
+    "deploy:mark": "node scripts/mark-manual-deploy.mjs",
+    "check:nex-table": "node scripts/check-nex-table.mjs",
+    "check:work-log": "node scripts/check-work-log.mjs"
   }
 }
