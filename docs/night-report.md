@@ -57,9 +57,9 @@
 
 ## 원격 DB 사고 (아침 필수)
 
-- 원인: Windows/셸에 `DATABASE_URL=postgresql://app:app@211.110.16.130:5432/app` 가 설정되어 스크립트·초기 API가 원격에 연결됨.
+- 원인: Windows/셸에 `DATABASE_URL=postgresql://app:***@211.110.16.130:5432/app` 가 설정되어 스크립트·초기 API가 원격에 연결됨.
 - 추정 영향: `nex_users_money_nonneg` CHECK, `settlement_revision`, `nex_bet_settlement_events`, 프로브 로그인(`night_probe_*`) 및 관련 원장/출금/배팅.
-- 대응(이미 적용): 로컬 URL 강제, `DbService` 원격 거부 가드(`ALLOW_REMOTE_DB=1` 없으면 거부), 테스트 스크립트 원격 거부.
+- 대응(이미 적용): 로컬 URL 강제, `DbService`가 `211.110.16.130`을 항상 거부. 우회 플래그는 제거됨.
 - **아침 할 일:** 원격에서 프로브 데이터·불필요한 DDL 존재 여부 확인 후, 승인 하에 정리 또는 유지.
 
 ## 추가 마이그레이션

@@ -58,16 +58,10 @@ yarn workspace api db:seed
 
 코드는 Git push 후 `NexGitAutoPull`로 반영된다.
 
-NEX 스키마는 원격에서 다음으로 구체화한다(이미 적용됨).
+서버 DB는 서버 안에서만 접속한다. 재구성 절차는 [server-db-rebuild.md](./server-db-rebuild.md)를 따른다. 구 원격 패치 스크립트는 삭제됐다.
 
-```powershell
-yarn node scripts/setup-server-nex-db.mjs
-```
-
-- Postgres에 `nex` DB·`nex` 유저·`nex_*` 14테이블·시드 회원 6명
-- 서버 `app` DB의 구 테이블은 삭제하고 동일 `nex_*`를 적용
 - API 기동 시 `migrateOnBoot`가 마이그레이션을 재적용한다
-- `GET http://211.110.16.130:3000/api/health` → `{"status":"ok"}`
+- `GET http://211.110.16.130:3000/api/health` → `{"status":"ok","db":"up"}`
 
-권장 `DATABASE_URL`: `postgresql://nex:nex@localhost:5432/nex`  
-(서버 로컬 컨테이너 기준. 당분간 `app` DB에도 동일 `nex_*`가 있을 수 있다.)
+권장 `DATABASE_URL`: `postgresql://nex:nex@127.0.0.1:5432/nex`  
+(서버·로컬 모두 자기 PC의 Postgres. 외부 `5432`로 붙지 않는다.)

@@ -1,5 +1,7 @@
 # 서버 DB 재구성 절차 (실행용)
 
+> 이 절차의 구 컨테이너는 침입으로 폐기됨. 침입 대응은 incident 기록 참고.
+
 > **이 문서는 서버 Cursor가 서버 PC에서 그대로 실행한다.**  
 > 로컬 개발 PC에서는 실행하지 않는다. 패치(기존 13개 drizzle 이력 위에 0003/0004만 덧댐)는 하지 않는다.  
 > 운영 전 데모 데이터만 있으므로 **백업 후 새 DB를 만들고**, 로컬과 같은 마이그레이션 0000~0004 + 테스트 없는 기본 시드만 넣는다.
@@ -104,7 +106,7 @@ docker exec -e PGPASSWORD=CHANGE_ME nex-postgres psql -U nex_app -d nex -c "sele
 ```powershell
 cd <저장소루트>
 $env:DATABASE_URL = "postgresql://nex_app:CHANGE_ME@127.0.0.1:5432/nex"
-$env:ALLOW_REMOTE_DB = $null
+Remove-Item Env:REMOTE_DATABASE_URL -ErrorAction SilentlyContinue
 yarn workspace api db:migrate
 ```
 
@@ -140,7 +142,7 @@ select count(*) from nex_risk_settings;
 ```
 
 `yarn workspace api db:seed` 와 `ALLOW_SEED_RESET=1 npm run seed:reset` 은 **쓰지 않는다** (테스트 데이터 들어감).
-`scripts/setup-server-nex-db.mjs` 는 구 `app:app` 원격 패치용이다. **이 재구성에서는 실행하지 않는다.**
+구 원격 패치 스크립트(`setup-server-nex-db.mjs`)는 저장소에서 삭제됐다. **이 재구성에서는 쓰지 않는다.**
 
 ---
 
@@ -158,7 +160,7 @@ ADMIN_PASSWORD=<10자 이상 강한 값>
 # TELEGRAM_CHAT_ID=
 ```
 
-구 `postgresql://app:app@.../app` 줄은 지운다. 백업 `.env`는 `C:\backups\env-before-rebuild-$stamp.txt` 로만 보관.
+구 `postgresql://app:***@.../app` 줄은 지운다. 백업 `.env`는 `C:\backups\env-before-rebuild-$stamp.txt` 로만 보관.
 
 API 재시작 (서버의 실제 방식에 맞춤):
 

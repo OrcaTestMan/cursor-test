@@ -19,8 +19,8 @@ const dbUrl =
   process.env.LOCAL_DATABASE_URL ||
   process.env.DATABASE_URL ||
   'postgresql://nex:nex@127.0.0.1:5432/nex'
-if (/211\.110\.16\.130/.test(dbUrl) && process.env.ALLOW_REMOTE_DB !== '1') {
-  console.error('money-verify-daily refused remote DB without ALLOW_REMOTE_DB=1')
+if (/211\.110\.16\.130/.test(dbUrl)) {
+  console.error('money-verify-daily refused remote DB')
   process.exit(2)
 }
 const sql = postgres(dbUrl, { max: 1 })

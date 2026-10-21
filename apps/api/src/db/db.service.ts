@@ -13,13 +13,10 @@ export class DbService implements OnModuleDestroy {
     if (!url) {
       throw new Error('DATABASE_URL is required');
     }
-    // 야간/로컬 안전장치: 원격 서버 DB는 명시적 허용 없으면 거부
-    if (
-      /211\.110\.16\.130/.test(url) &&
-      process.env.ALLOW_REMOTE_DB !== '1'
-    ) {
+    // 서버 DB는 서버 루프백만. 이 PC에서 원격 5432로 붙는 것을 거부한다.
+    if (/211\.110\.16\.130/.test(url)) {
       throw new Error(
-        'Refusing DATABASE_URL to 211.110.16.130 (set ALLOW_REMOTE_DB=1 only for approved ops)',
+        'Refusing DATABASE_URL to 211.110.16.130 (server DB is local-only)',
       );
     }
 
