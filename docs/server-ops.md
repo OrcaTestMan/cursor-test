@@ -16,7 +16,7 @@ Windows 서버에서 Nest API·Docker Postgres를 상시 운영할 때 쓰는 �
 | 시크릿 | `C:\backups\live-secrets\` (git 금지) |
 | 사고 증거 | `C:\backups\incident-20261021\` (복원 금지) |
 
-자동 배포 작업(`NexGitAutoPull`)은 `scripts/deploy-safe.mjs` 를 1분마다 호출한다.  
+자동 배포 작업(`NexGitAutoPull`)은 1분마다 안전 배포 스크립트를 호출한다.  
 프론트엔드(Vite) 전용 Windows 서비스는 없다. 서버는 `nex-api`(3000)만 NSSM으로 상시 실행하며, 배포 시 web·api 둘 다 빌드하지만 재시작은 API만 한다.
 
 ## 재부팅 후 복구 순서
@@ -143,7 +143,8 @@ Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpda
 
 ### 동작
 
-- 작업: `\NexGitAutoPull` → `scripts/server/run-auto-deploy.ps1` → `scripts/deploy-safe.mjs`
+- 작업: `\NexGitAutoPull` → `C:\nex\deploy\run-auto-deploy.ps1` → `C:\nex\deploy\deploy-safe.mjs`  
+  (저장소 소스: `scripts/deploy-safe.mjs` / `scripts/server/*.ps1`, 브랜치 `deploy-auto`. main 병합 전에는 실행본을 `C:\nex\deploy`에 둔다.)
 - 대상 브랜치: 기본 `main` (`DEPLOY_BRANCH` 로 변경 가능)
 - 매 실행: 잠금 → `git fetch` → 새 커밋 없으면 종료 → dirty면 거부 → 이전 실패 커밋과 같으면 스킵  
   → `apps/api/drizzle/` **신규 추가** 파일이 있으면 **배포 안 함** (수동 승인 필요)  
@@ -168,10 +169,10 @@ Get-Content C:\nex\logs\deploy.log -Tail 50
 ```powershell
 cd <저장소루트>
 $env:DEPLOY_BRANCH = 'main'
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\server\run-auto-deploy.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\nex\deploy\run-auto-deploy.ps1
 ```
 
-관리자 권한이 있어야 `nssm restart` 가 된다. 스케줄 작업은 Highest 로 등록돼 있다.
+관리자 권한이 있어야 `nssm` 제어가 된다. 스케줄 작업은 Highest 로 등록돼 있다.
 
 ### 수동 롤백
 
