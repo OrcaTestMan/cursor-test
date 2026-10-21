@@ -74,6 +74,10 @@ const KNOWN_API_ROUTES = [
   ['GET', '/api/risk/stream'],
   ['GET', '/api/auth/me'],
   ['POST', '/api/auth/logout'],
+  ['GET', '/api/bet-history'],
+  ['GET', '/api/bet-history/summary'],
+  ['GET', '/api/bet-history/export.csv'],
+  ['GET', '/api/bet-history/:id'],
 ] as const
 
 function collectRoutes(app: INestApplication) {
@@ -247,6 +251,39 @@ describe.sequential('관리자 세션 (e2e)', () => {
       .set('Cookie', cookie)
     expect(users.status).toBe(200)
     expect(JSON.stringify(users.body)).not.toMatch(/passwordHash/)
+  })
+
+  it('배팅 내역은 로그인 없이 401, 상담원은 조회만 된다', async () => {
+    const no = await request(app.getHttpServer()).get('/api/bet-history?range=all')
+    expect(no.status).toBe(401)
+    const cookie = await login(app, agent)
+    const list = await request(app.getHttpServer())
+      .get('/api/bet-history?range=all')
+      .set('Cookie', cookie)
+    expect(list.status).toBe(200)
+    expect(Array.isArray(list.body.items)).toBe(true)
+    const sum = await request(app.getHttpServer())
+      .get('/api/bet-history/summary?range=all')
+      .set('Cookie', cookie)
+    expect(sum.status).toBe(200)
+    expect(sum.body).toEqual(
+      expect.objectContaining({
+        count: expect.any(Number),
+        totalStake: expect.any(Number),
+        totalPaid: expect.any(Number),
+        companyPnl: expect.any(Number),
+      }),
+    )
+    const csv = await request(app.getHttpServer())
+      .get('/api/bet-history/export.csv?range=all')
+      .set('Cookie', cookie)
+    expect(csv.status).toBe(200)
+    expect(String(csv.headers['content-type'] || '')).toMatch(/csv/)
+    const write = await request(app.getHttpServer())
+      .post('/api/bet-history')
+      .set('Cookie', cookie)
+      .set('Origin', originOf())
+    expect([403, 404]).toContain(write.status)
   })
 
   it('상담원은 잔액 조정이 403', async () => {

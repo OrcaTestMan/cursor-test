@@ -77,6 +77,7 @@ const userDefs = [
   { login: 'vip01', nick: 'VIP회원', grade: 'vip', money: 500000 },
   { login: 'watch01', nick: '주의회원', grade: 'watch', money: 80000 },
   { login: 'blocked01', nick: '차단회원', grade: 'normal', money: 0, status: 'blocked' },
+  { login: 'hist01', nick: '내역검증', grade: 'normal', money: 200000 },
   { login: 'sharp01', nick: '고적중', grade: 'vip', money: 200000 },
   { login: 'wd_wait1', nick: '출금대기1', grade: 'normal', money: 30000 },
   { login: 'wd_wait2', nick: '출금대기2', grade: 'normal', money: 45000 },
@@ -151,18 +152,27 @@ async function placeBet({ login, stake, odds, legs, status = '진행 중', whenL
   const userId = users[login]
   const payout = Math.round(stake * odds)
   const matchName = legs.map((l) => matchSpecs[l.mi].name).join(' / ')
+  const folderKind = legs.length >= 2 ? 'multi' : 'single'
   const [bet] = await sql`
-    insert into nex_bets (user_id, match_name, league, sport, market, line, when_label, stake, odds, potential_payout, status, match_live)
+    insert into nex_bets (user_id, match_name, league, sport, market, line, when_label, stake, odds, potential_payout, status, match_live, folder_kind)
     values (
       ${userId}, ${matchName}, ${matchSpecs[legs[0].mi].league}, ${matchSpecs[legs[0].mi].sport},
-      '승패', '-', ${whenLabel}, ${stake}, ${odds}, ${payout}, '진행 중', ${live}
+      '승패', '-', ${whenLabel}, ${stake}, ${odds}, ${payout}, '진행 중', ${live}, ${folderKind}
     ) returning id`
   await applyMoney(userId, -stake, '배팅', 'bet_place', bet.id, `seed bet ${betSeq}`)
   for (const leg of legs) {
     const oid = outcomeIds[leg.mi][leg.side]
+    const spec = matchSpecs[leg.mi]
+    const legStatus = leg.status || '진행 중'
     await sql`
-      insert into nex_bet_legs (bet_id, match_id, market_id, outcome_id, odds_at_bet, line)
-      values (${bet.id}, ${matchIds[leg.mi]}, ${marketIds[leg.mi]}, ${oid}, ${leg.odds || odds}, '-')
+      insert into nex_bet_legs (
+        bet_id, match_id, market_id, outcome_id, odds_at_bet, line,
+        match_name, market_name, outcome_name, sport, league, live, status
+      )
+      values (
+        ${bet.id}, ${matchIds[leg.mi]}, ${marketIds[leg.mi]}, ${oid}, ${leg.odds || odds}, '-',
+        ${spec.name}, '승패', ${leg.side === 0 ? '홈' : '원정'}, ${spec.sport}, ${spec.league}, ${spec.live}, ${legStatus}
+      )
     `
     // 단폴 또는 "이 경기만 남은" 다폴의 해당 결과만 노출 집계
     if (legs.length === 1 || leg.remaining) {
@@ -203,6 +213,21 @@ async function placeBet({ login, stake, odds, legs, status = '진행 중', whenL
           await bumpExposure(matchIds[leg.mi], marketIds[leg.mi], outcomeIds[leg.mi][leg.side], stake, payout, -1)
         }
       }
+    } else if (status === '적특') {
+      const [ev] = await sql`
+        insert into nex_bet_settlement_events (bet_id, revision, from_status, to_status, money_delta, memo)
+        values (${bet.id}, 1, '진행 중', '적특', ${stake}, 'seed') returning id`
+      await applyMoney(userId, stake, '적특환불', 'bet_push', ev.id, 'seed push')
+      await sql`update nex_bets set status='적특', settlement_revision=1, settled_at=now() where id=${bet.id}`
+      await sql`update nex_bet_legs set status='적특' where bet_id=${bet.id}`
+      for (const leg of legs) {
+        if (legs.length === 1 || leg.remaining) {
+          await bumpExposure(matchIds[leg.mi], marketIds[leg.mi], outcomeIds[leg.mi][leg.side], stake, payout, -1)
+        }
+      }
+    }
+    if (legs.length === 1) {
+      await sql`update nex_bet_legs set status=${status} where bet_id=${bet.id}`
     }
   }
   return bet.id
@@ -294,6 +319,51 @@ await placeBet({
   odds: 2.0,
   legs: [{ mi: 5, side: 0 }],
   status: '취소',
+})
+await placeBet({
+  login: 'hist01',
+  stake: 10000,
+  odds: 1.9,
+  legs: [{ mi: 0, side: 0 }],
+  live: true,
+  whenLabel: '실시간',
+})
+await placeBet({
+  login: 'hist01',
+  stake: 10000,
+  odds: 2.0,
+  legs: [{ mi: 4, side: 0, status: '적중' }],
+  status: '적중',
+})
+await placeBet({
+  login: 'hist01',
+  stake: 10000,
+  odds: 2.0,
+  legs: [{ mi: 4, side: 1, status: '미적중' }],
+  status: '미적중',
+})
+await placeBet({
+  login: 'hist01',
+  stake: 10000,
+  odds: 2.0,
+  legs: [{ mi: 5, side: 0, status: '취소' }],
+  status: '취소',
+})
+await placeBet({
+  login: 'hist01',
+  stake: 10000,
+  odds: 2.0,
+  legs: [{ mi: 3, side: 0, status: '적특' }],
+  status: '적특',
+})
+await placeBet({
+  login: 'hist01',
+  stake: 5000,
+  odds: 3.4,
+  legs: [
+    { mi: 1, side: 0, odds: 1.8, status: '적중' },
+    { mi: 2, side: 1, odds: 1.9, status: '진행 중' },
+  ],
 })
 // 재정산 1건: 적중 → 미적중 → 적중
 const rsId = await placeBet({
