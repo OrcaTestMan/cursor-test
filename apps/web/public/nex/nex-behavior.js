@@ -1,3 +1,40 @@
+;(function bootAdminSession() {
+  const path = location.pathname
+  const isLogin = /\/nex\/login\.html$/i.test(path)
+  if (!path.startsWith('/nex/')) return
+  fetch('/api/auth/me', { credentials: 'include' })
+    .then(async (res) => {
+      if (res.ok) {
+        const me = await res.json()
+        if (isLogin) {
+          location.replace('/nex/dashboard.html')
+          return
+        }
+        const name = document.querySelector('header .text-dim .truncate, header .text-\\[13px\\]')
+        if (name) {
+          name.innerHTML = `${me.nick}<span class="font-normal text-muted">(${me.login})</span>`
+        }
+        document.querySelectorAll('aside button').forEach((btn) => {
+          if (!/로그아웃/.test(btn.textContent || '')) return
+          btn.addEventListener('click', async (event) => {
+            event.preventDefault()
+            await fetch('/api/auth/logout', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+            })
+            location.replace('/nex/login.html')
+          })
+        })
+        return
+      }
+      if (!isLogin) location.replace('/nex/login.html')
+    })
+    .catch(() => {
+      if (!isLogin) location.replace('/nex/login.html')
+    })
+})()
+
 const STORE_KEY = 'nex-demo-state-v1'
 const TEST_MARK = ' (t)'
 
@@ -2391,7 +2428,7 @@ function showRiskLoadError(on) {
 }
 
 async function fetchRiskJson(path) {
-  const res = await fetch(path)
+  const res = await fetch(path, { credentials: 'include' })
   if (!res.ok) throw new Error(`${path} ${res.status}`)
   return res.json()
 }

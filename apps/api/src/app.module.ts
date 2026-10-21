@@ -9,6 +9,7 @@ import { DbModule } from './db/db.module.js'
 import { MoneyModule } from './money/money.module.js'
 import { NotifyModule } from './notify/notify.module.js'
 import { RiskModule } from './risk/risk.module.js'
+import { AuthModule } from './auth/auth.module.js'
 import { SecurityModule } from './security/security.module.js'
 import { UsersModule } from './users/users.module.js'
 
@@ -16,6 +17,7 @@ import { UsersModule } from './users/users.module.js'
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     SecurityModule,
+    AuthModule,
     DbModule,
     UsersModule,
     CashModule,

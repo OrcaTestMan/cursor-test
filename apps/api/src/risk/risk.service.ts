@@ -17,6 +17,7 @@ import {
   riskSettings,
   users,
 } from '../db/schema.js'
+import { maskAccount, maskIp } from '../common/sensitive.js'
 import { WalletService, type WalletTx } from '../money/wallet.service.js'
 
 @Injectable()
@@ -232,9 +233,9 @@ export class RiskService {
         nick: String(r.nick),
         grade: String(r.grade || 'normal'),
         money: Number(r.money || 0),
-        lastIp: String(r.last_ip || ''),
+        lastIp: maskIp(String(r.last_ip || '')),
         lastDevice: String(r.last_device || ''),
-        withdrawAccount: String(r.withdraw_account || ''),
+        withdrawAccount: maskAccount(String(r.withdraw_account || '')),
         status: String(r.status || 'active'),
         sportCount: Number(r.sport_count || 0),
         sportStake: Number(r.sport_stake || 0),

@@ -5,8 +5,15 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 
-/** API 기동 시 drizzle 마이그레이션을 적용한다. 서버 PC auto-pull 후 재시작에도 안전하다. */
+/** 운영은 백업 후 db:migrate 로만 적용한다. 개발·테스트만 기동 시 적용. */
+export function shouldMigrateOnBoot(env: NodeJS.ProcessEnv = process.env) {
+  return env.NODE_ENV === 'development' || env.NODE_ENV === 'test'
+}
+
 export async function migrateOnBoot() {
+  if (!shouldMigrateOnBoot()) {
+    return { skipped: true as const, reason: 'production' }
+  }
   const url = process.env.DATABASE_URL
   if (!url) throw new Error('DATABASE_URL is required')
 
@@ -27,4 +34,5 @@ export async function migrateOnBoot() {
   } finally {
     await client.end({ timeout: 5 })
   }
+  return { skipped: false as const, folder }
 }

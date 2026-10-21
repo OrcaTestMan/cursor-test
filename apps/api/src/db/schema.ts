@@ -509,3 +509,80 @@ export const riskAlerts = pgTable('nex_risk_alerts', {
   acked: boolean('acked').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+export const adminRole = pgEnum('nex_admin_role', [
+  'superadmin',
+  'operator',
+  'agent',
+])
+
+export const adminAuditAction = pgEnum('nex_admin_audit_action', [
+  'login_success',
+  'login_fail',
+  'logout',
+])
+
+/** 관리자 — 회원(nex_users)과 분리 */
+export const admins = pgTable(
+  'nex_admins',
+  {
+    id: serial('id').primaryKey(),
+    login: varchar('login', { length: 40 }).notNull(),
+    nick: varchar('nick', { length: 40 }).notNull(),
+    passwordHash: text('password_hash').notNull(),
+    totpSecret: text('totp_secret').notNull(),
+    role: adminRole('role').notNull().default('agent'),
+    failedAttempts: integer('failed_attempts').notNull().default(0),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex('nex_admins_login_uidx').on(t.login)],
+)
+
+export const adminSessions = pgTable(
+  'nex_admin_sessions',
+  {
+    id: bigint('id', { mode: 'number' })
+      .primaryKey()
+      .generatedByDefaultAsIdentity(),
+    adminId: integer('admin_id')
+      .notNull()
+      .references(() => admins.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('nex_admin_sessions_token_uidx').on(t.tokenHash),
+    index('nex_admin_sessions_admin_idx').on(t.adminId),
+  ],
+)
+
+export const adminAuditLogs = pgTable(
+  'nex_admin_audit_logs',
+  {
+    id: bigint('id', { mode: 'number' })
+      .primaryKey()
+      .generatedByDefaultAsIdentity(),
+    adminId: integer('admin_id').references(() => admins.id, {
+      onDelete: 'set null',
+    }),
+    login: varchar('login', { length: 40 }).notNull().default(''),
+    action: adminAuditAction('action').notNull(),
+    ip: varchar('ip', { length: 64 }).notNull().default(''),
+    userAgent: varchar('user_agent', { length: 240 }).notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('nex_admin_audit_created_idx').on(t.createdAt)],
+)

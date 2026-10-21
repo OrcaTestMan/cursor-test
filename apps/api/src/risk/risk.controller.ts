@@ -11,6 +11,8 @@ import {
   Sse,
 } from '@nestjs/common'
 import { interval, map, type Observable } from 'rxjs'
+import { OPS_ROLES } from '../auth/admin-roles.js'
+import { Roles } from '../auth/auth.decorators.js'
 import { ParseIdPipe } from '../common/parse-id.pipe.js'
 import { RiskService } from './risk.service.js'
 
@@ -88,6 +90,7 @@ export class RiskController {
   }
 
   @Put('settings')
+  @Roles(...OPS_ROLES)
   putSettings(
     @Body()
     body: {

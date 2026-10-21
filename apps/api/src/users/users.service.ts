@@ -4,10 +4,11 @@ import {
   dateCondition,
   resolveDateRange,
 } from '../common/date-range.js'
-import { pageParams, type Page } from '../common/pagination.js'
+import { pageParams } from '../common/pagination.js'
 import { andTokens, searchTokens } from '../common/search-query.js'
 import { DbService } from '../db/db.service.js'
 import { users } from '../db/schema.js'
+import { publicUser } from '../common/sensitive.js'
 import {
   type UpdateUserStatusDto,
   type UserListQueryDto,
@@ -21,7 +22,7 @@ export class UsersService {
     return this.dbService.db
   }
 
-  async list(query: UserListQueryDto): Promise<Page<typeof users.$inferSelect>> {
+  async list(query: UserListQueryDto) {
     const { page, pageSize, offset } = pageParams(query)
     // 회원 목록은 기간 미지정 시 전체 (오늘만이면 시드·기존 회원이 빠짐)
     const range = resolveDateRange({ ...query, range: query.range ?? 'all' })
@@ -48,13 +49,18 @@ export class UsersService {
         .offset(offset),
       this.db.select({ value: count() }).from(users).where(where),
     ])
-    return { items, total, page, pageSize }
+    return {
+      items: items.map((row) => publicUser(row, false)),
+      total,
+      page,
+      pageSize,
+    }
   }
 
   async get(id: number) {
     const [row] = await this.db.select().from(users).where(eq(users.id, id))
     if (!row) throw new NotFoundException('회원을 찾을 수 없습니다.')
-    return row
+    return publicUser(row, true)
   }
 
   async updateStatus(id: number, body: UpdateUserStatusDto) {
@@ -69,6 +75,6 @@ export class UsersService {
       })
       .where(eq(users.id, id))
       .returning()
-    return row
+    return row ? publicUser(row, true) : row
   }
 }

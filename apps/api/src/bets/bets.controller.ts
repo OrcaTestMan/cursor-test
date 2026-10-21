@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
+import { refuseMemberWriteInProduction } from '../common/production-block.js'
 import { ParseIdPipe } from '../common/parse-id.pipe.js'
 import { BetsService } from './bets.service.js'
 import {
@@ -20,6 +21,7 @@ export class BetsController {
 
   @Post()
   place(@Body() body: PlaceBetDto) {
+    refuseMemberWriteInProduction()
     return this.betsService.placeSport(body)
   }
 
@@ -48,6 +50,7 @@ export class CasinoBetsController {
 
   @Post()
   place(@Body() body: PlaceCasinoBetDto) {
+    refuseMemberWriteInProduction()
     return this.betsService.placeCasino(body)
   }
 

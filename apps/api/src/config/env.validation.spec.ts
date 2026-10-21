@@ -6,38 +6,14 @@ const base = {
 }
 
 describe('validateEnv', () => {
-  it('개발에서는 임시 Basic 값이 없어도 시작한다', () => {
+  it('DATABASE_URL 이 있으면 시작한다', () => {
     expect(() => validateEnv({ ...base })).not.toThrow()
-  })
-
-  it('운영에서 TEMP_BASIC_AUTH_USER/PASS 가 비면 시작하지 않는다', () => {
     expect(() =>
-      validateEnv({
-        ...base,
-        NODE_ENV: 'production',
-        ADMIN_PASSWORD: 'long-enough-password',
-      }),
-    ).toThrow(/TEMP_BASIC_AUTH_USER/)
-
-    expect(() =>
-      validateEnv({
-        ...base,
-        NODE_ENV: 'production',
-        ADMIN_PASSWORD: 'long-enough-password',
-        TEMP_BASIC_AUTH_USER: 'ops',
-      }),
-    ).toThrow(/TEMP_BASIC_AUTH_PASS/)
-  })
-
-  it('운영에서 값이 있으면 통과한다', () => {
-    expect(() =>
-      validateEnv({
-        ...base,
-        NODE_ENV: 'production',
-        ADMIN_PASSWORD: 'long-enough-password',
-        TEMP_BASIC_AUTH_USER: 'ops',
-        TEMP_BASIC_AUTH_PASS: 'temporary-pass',
-      }),
+      validateEnv({ ...base, NODE_ENV: 'production' }),
     ).not.toThrow()
+  })
+
+  it('DATABASE_URL 이 없으면 시작하지 않는다', () => {
+    expect(() => validateEnv({})).toThrow(/DATABASE_URL/)
   })
 })

@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common'
+import { OPS_ROLES } from '../auth/admin-roles.js'
+import { Roles } from '../auth/auth.decorators.js'
 import { ParseIdPipe } from '../common/parse-id.pipe.js'
 import { UpdateUserStatusDto, UserListQueryDto } from './dto/user.dto.js'
 import { UsersService } from './users.service.js'
@@ -18,6 +20,7 @@ export class UsersController {
   }
 
   @Patch(':id/status')
+  @Roles(...OPS_ROLES)
   updateStatus(
     @Param('id', ParseIdPipe) id: number,
     @Body() body: UpdateUserStatusDto,

@@ -60,7 +60,7 @@ yarn workspace api db:seed
 
 서버 DB는 서버 안에서만 접속한다. 재구성 절차는 [server-db-rebuild.md](./server-db-rebuild.md)를 따른다. 구 원격 패치 스크립트는 삭제됐다.
 
-- API 기동 시 `migrateOnBoot`가 마이그레이션을 재적용한다
+- 개발·테스트 기동 시에만 `migrateOnBoot`가 적용한다. 운영(`NODE_ENV=production` 또는 미설정)은 `yarn workspace api db:migrate` 로만 적용한다.
 - `GET http://211.110.16.130:3000/api/health` → `{"status":"ok","db":"up"}`
 
 권장 `DATABASE_URL`: `postgresql://nex:nex@127.0.0.1:5432/nex`  

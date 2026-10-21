@@ -139,6 +139,171 @@ Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpda
 서버 작업 폴더는 평소 `main` 을 유지한다.  
 `.env`, `C:\backups\` 시크릿·증거는 절대 커밋하지 않는다.
 
+운영 API는 기동 때 마이그레이션을 돌리지 않는다. DB 구조 변경은 백업 후 `yarn workspace api db:migrate` 로만 적용한다.
+
+## 마이그레이션 포함 수동 적용 (서버 Cursor)
+
+자동 배포는 `apps/api/drizzle/` 에 **신규 추가**된 파일이 있으면 pull 하지 않고 `migration_manual_approval_required` 로 끝난다.  
+이 커밋(관리자 로그인, `0005_admin_auth.sql`)은 아래 순서를 **그대로** 따른다.  
+비밀번호·TOTP·otpauth·`.env` 내용은 터미널·채팅에 출력하지 않는다.
+
+**저장소루트**는 `NexGitAutoPull` 이 `git fetch` 하는 폴더다. 아래 중 하나로 확인한다.
+
+```powershell
+Get-Content C:\nex\deploy\run-auto-deploy.ps1
+# DEPLOY_ROOT 또는 $root 가 저장소루트
+Get-Content C:\nex\logs\deploy.log -Tail 5
+```
+
+### 0. 자동 배포 잠시 끄기
+
+수동 pull 중에 1분 주기 작업이 끼어들지 않게 한다.
+
+```powershell
+Disable-ScheduledTask -TaskName NexGitAutoPull
+Get-ScheduledTask -TaskName NexGitAutoPull | Select-Object TaskName, State
+```
+
+기대: `State` = `Disabled`
+
+### 1. DB 백업
+
+컨테이너 `nex-postgres-clean` 의 env(`POSTGRES_USER`, `POSTGRES_DB`)로 덤프한다. 비밀번호를 찍지 않는다.
+
+```powershell
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+New-Item -ItemType Directory -Force -Path C:\backups | Out-Null
+docker exec nex-postgres-clean sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f /tmp/nex.dump'
+docker cp nex-postgres-clean:/tmp/nex.dump "C:\backups\nex-pre-admin-auth-$stamp.dump"
+docker exec nex-postgres-clean rm -f /tmp/nex.dump
+Get-Item "C:\backups\nex-pre-admin-auth-$stamp.dump" | Select-Object FullName, Length
+```
+
+`Length` 가 0 이면 중단한다.
+
+### 2. main pull
+
+```powershell
+cd <저장소루트>
+git status --porcelain
+git fetch origin main
+git pull --ff-only origin main
+git rev-parse --short HEAD
+git rev-parse --short origin/main
+```
+
+`HEAD` 와 `origin/main` 이 같아야 한다. dirty 이면 중단하고 보고한다.
+
+### 3. 의존성 · 빌드
+
+```powershell
+cd <저장소루트>
+yarn install --immutable
+yarn workspace web build
+yarn workspace api build
+```
+
+### 4. 마이그레이션 (이 단계에서만)
+
+```powershell
+cd <저장소루트>
+yarn workspace api db:migrate
+```
+
+`apps/api/.env` 의 `DATABASE_URL` 이 이 서버 로컬 Postgres 를 가리키는지 확인한다. 원격 IP 로 붙이지 않는다.
+
+### 5. API 재시작 · health
+
+```powershell
+nssm restart nex-api
+# 또는 Restart-Service nex-api
+Start-Sleep -Seconds 3
+Invoke-RestMethod http://127.0.0.1:3000/api/health
+```
+
+기대: `{ "status": "ok", "db": "up" }`  
+실패하면 `C:\nex\logs\nex-api.err.log` 를 보고 마이그레이션·`.env` 를 점검한다. 자동 배포는 아직 켜지 않는다.
+
+### 6. 첫 관리자 생성
+
+비밀번호는 인자로 넣지 않는다. 스크립트가 랜덤 생성해 파일에만 쓴다.
+
+```powershell
+New-Item -ItemType Directory -Force -Path C:\nex\secrets | Out-Null
+cd <저장소루트>
+yarn workspace api admin:create -- --login <아이디> --nick 관리자 --role superadmin
+```
+
+터미널에는 아래 **경로 두 줄만** 나와야 한다.
+
+```text
+C:\nex\secrets\admin-<아이디>.txt
+C:\nex\secrets\admin-<아이디>-qr.png
+```
+
+비밀번호·TOTP 시크릿·otpauth 주소가 보이면 실패다. 채팅에 파일 내용을 붙여 넣지 않는다.  
+QR 은 서버에서 Google Authenticator 로만 찍는다.
+
+### 7. 확인
+
+브라우저를 서버에서 연다. 비밀값은 채팅에 쓰지 않는다.
+
+1. `http://127.0.0.1:3000/nex` → 로그인 화면
+2. 파일의 아이디·비밀번호 + Authenticator 6자리로 로그인
+3. 회원 목록이 보이는지
+4. 로그아웃 후 다시 `/nex` → 로그인 화면
+
+### 8. 자동 배포 기록 맞추기 (필수)
+
+수동으로 이미 이 커밋을 적용했으므로, 자동 배포가 **다시 막거나 재시도하지 않게** 맞춘다.
+
+동작 요약:
+
+| 상태 | 다음 `NexGitAutoPull` |
+| --- | --- |
+| `HEAD` == `origin/main` | `no_new_commits` 로 종료. pull·빌드·재시작 없음 |
+| `C:\nex\logs\deploy-failed-sha.txt` 가 현재 SHA | `HEAD` 가 뒤처져 있으면 `same_as_previous_failure` 로 계속 스킵. 마이그레이션 대기는 이 파일을 쓰지 않음 |
+| `HEAD` 가 `origin/main` 보다 뒤처짐 + drizzle 신규 파일 | 매분 `migration_manual_approval_required` + 알림 |
+
+수동 적용 뒤에는 `HEAD` 를 `origin/main` 과 같게 두고, 실패 SHA 가 현재 커밋이면 지운다.
+
+```powershell
+cd <저장소루트>
+git rev-parse HEAD
+git rev-parse origin/main
+node scripts/mark-manual-deploy.mjs
+```
+
+`mark-manual-deploy.mjs` 가 하는 일:
+
+1. `HEAD` 를 읽는다
+2. `C:\nex\logs\deploy-failed-sha.txt` 내용이 `HEAD` 와 같으면 파일을 삭제한다
+3. `C:\nex\logs\deploy.log` 에 `result=deployed`, `reason=manual_after_migration`, `to=<HEAD>` 한 줄을 추가한다
+4. 터미널에는 로그 경로와 SHA 만 출력한다
+
+확인:
+
+```powershell
+git rev-parse HEAD
+git rev-parse origin/main
+# 두 값이 같아야 한다
+if (Test-Path C:\nex\logs\deploy-failed-sha.txt) { Get-Content C:\nex\logs\deploy-failed-sha.txt }
+Get-Content C:\nex\logs\deploy.log -Tail 3
+```
+
+`deploy-failed-sha.txt` 가 없거나, 있어도 현재 `HEAD` 와 다르면 된다.
+
+### 9. 자동 배포 다시 켜기
+
+```powershell
+Enable-ScheduledTask -TaskName NexGitAutoPull
+Get-ScheduledTask -TaskName NexGitAutoPull | Select-Object TaskName, State
+```
+
+다음 주기 로그가 `skipped` / `no_new_commits` 이면 정상이다. `migration_manual_approval_required` 가 다시 나오면 `HEAD` 가 pull 되지 않은 것이다.
+
+이 절차는 `C:\nex\deploy` 복사본을 고치지 않는다. `scripts/deploy-safe.mjs` 를 이 커밋에서 바꾸지 않았기 때문이다.
+
 ## 자동 배포 (NexGitAutoPull)
 
 ### 동작

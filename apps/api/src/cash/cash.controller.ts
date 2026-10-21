@@ -1,4 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
+import { OPS_ROLES } from '../auth/admin-roles.js'
+import { Roles } from '../auth/auth.decorators.js'
+import { refuseMemberWriteInProduction } from '../common/production-block.js'
 import { ParseIdPipe } from '../common/parse-id.pipe.js'
 import { CashService } from './cash.service.js'
 import {
@@ -18,6 +21,7 @@ export class CashController {
 
   @Post()
   create(@Body() body: CreateCashDto) {
+    refuseMemberWriteInProduction()
     return this.cashService.create(body)
   }
 
@@ -27,6 +31,7 @@ export class CashController {
   }
 
   @Patch(':id/status')
+  @Roles(...OPS_ROLES)
   updateStatus(
     @Param('id', ParseIdPipe) id: number,
     @Body() body: UpdateCashStatusDto,

@@ -7,7 +7,10 @@ import { serveWeb } from './security/web-static.js';
 import { setupApp } from './setup-app.js';
 
 async function bootstrap() {
-  await migrateOnBoot();
+  const migrated = await migrateOnBoot();
+  if (migrated?.skipped) {
+    new Logger('Migrate').log('기동 시 마이그레이션 생략. 운영은 yarn workspace api db:migrate');
+  }
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   if (process.env.TRUST_PROXY === '1') {
     app.set('trust proxy', 1);

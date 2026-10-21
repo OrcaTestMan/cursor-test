@@ -1,4 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common'
+import { OPS_ROLES } from '../auth/admin-roles.js'
+import { Roles } from '../auth/auth.decorators.js'
+import { refuseBackfillInProduction } from '../common/production-block.js'
 import { ParseIdPipe } from '../common/parse-id.pipe.js'
 import {
   AdminAdjustDto,
@@ -27,10 +30,12 @@ export class MoneyController {
 
   @Post('backfill')
   backfill() {
+    refuseBackfillInProduction()
     return this.wallet.backfillLedgers()
   }
 
   @Post('adjust')
+  @Roles(...OPS_ROLES)
   adjust(@Body() body: AdminAdjustDto) {
     return this.moneyService.adminAdjust(body)
   }

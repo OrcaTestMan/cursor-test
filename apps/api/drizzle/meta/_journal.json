@@ -36,6 +36,13 @@
       "when": 1792640000000,
       "tag": "0004_risk_seed_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792720000000,
+      "tag": "0005_admin_auth",
+      "breakpoints": true
     }
   ]
 }

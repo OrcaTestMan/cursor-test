@@ -12,6 +12,7 @@
     "dev:web": "yarn workspace web dev",
     "dev:api": "yarn workspace api dev",
     "build": "yarn workspace web build && yarn workspace api build",
-    "start": "node --env-file=apps/api/.env apps/api/dist/main.js"
+    "start": "node --env-file=apps/api/.env apps/api/dist/main.js",
+    "deploy:mark": "node scripts/mark-manual-deploy.mjs"
   }
 }
