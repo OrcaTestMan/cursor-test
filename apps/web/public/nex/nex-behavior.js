@@ -14,6 +14,7 @@
         if (name) {
           name.innerHTML = `${me.nick}<span class="font-normal text-muted">(${me.login})</span>`
         }
+        mountOtpToggle(me)
         document.querySelectorAll('aside button').forEach((btn) => {
           if (!/로그아웃/.test(btn.textContent || '')) return
           btn.addEventListener('click', async (event) => {
@@ -35,14 +36,88 @@
     })
 })()
 
-const STORE_KEY = 'nex-demo-state-v1'
-const TEST_MARK = ' (t)'
+function redirectIfAuthLost(res) {
+  if (res && res.status === 401) {
+    location.replace('/nex/login.html')
+    return true
+  }
+  return false
+}
+
+function otpToggleClass(active) {
+  return active
+    ? 'h-7 min-w-7 rounded-full px-2 text-[11px] font-black transition-colors bg-accent text-bg'
+    : 'h-7 min-w-7 rounded-full px-2 text-[11px] font-black transition-colors text-muted hover:text-fg'
+}
+
+function paintOtpToggle(root, required) {
+  const on = root.querySelector('[data-otp="on"]')
+  const off = root.querySelector('[data-otp="off"]')
+  if (on) {
+    on.setAttribute('aria-pressed', required ? 'true' : 'false')
+    on.className = otpToggleClass(required)
+  }
+  if (off) {
+    off.setAttribute('aria-pressed', required ? 'false' : 'true')
+    off.className = otpToggleClass(!required)
+  }
+}
+
+function mountOtpToggle(me) {
+  const lang = document.querySelector('header [aria-label^="팀명 언어"]')
+  const bar = lang?.parentElement || document.querySelector('header .flex.items-center.gap-2\\.5')
+  let group = document.querySelector('[data-otp-toggle]')
+  if (!group) {
+    if (!bar) return
+    group = document.createElement('div')
+    group.dataset.otpToggle = '1'
+    group.className = 'flex h-9 items-center rounded-full border border-edge pl-2.5 pr-1 gap-1'
+    group.setAttribute('role', 'group')
+    group.setAttribute('aria-label', 'OTP')
+    group.title = '관리자 로그인 구글 OTP. on이면 코드 필수, off면 아이디·비밀번호만.'
+    group.innerHTML = `<span class="pr-1 text-[11px] font-bold text-muted" aria-hidden="true">OTP</span><button type="button" data-otp="on" aria-pressed="true" class="${otpToggleClass(true)}">on</button><button type="button" data-otp="off" aria-pressed="false" class="${otpToggleClass(false)}">off</button>`
+    if (lang) bar.insertBefore(group, lang)
+    else bar.prepend(group)
+  }
+  if (group.dataset.otpBound === '1') return
+  group.dataset.otpBound = '1'
+  const canEdit = me?.role === 'superadmin' || me?.role === 'operator'
+  fetch('/api/auth/otp', { credentials: 'include' })
+    .then(async (res) => {
+      if (!res.ok) throw new Error('otp')
+      return res.json()
+    })
+    .then((data) => paintOtpToggle(group, data.required !== false))
+    .catch(() => {})
+  group.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-otp]')
+    if (!button) return
+    if (!canEdit) {
+      toast('권한이 없습니다.')
+      return
+    }
+    const required = button.dataset.otp === 'on'
+    const res = await fetch('/api/auth/otp', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ required }),
+    })
+    if (!res.ok) {
+      if (redirectIfAuthLost(res)) return
+      toast(res.status === 403 ? '권한이 없습니다.' : '데이터를 불러오지 못했습니다')
+      return
+    }
+    const data = await res.json()
+    paintOtpToggle(group, data.required !== false)
+    toast(data.required ? 'OTP on' : 'OTP off')
+  })
+}
+
+const STORE_KEY = 'nex-ops-state-v1'
 
 function testTag(text) {
-  const value = String(text ?? '')
-  if (!value) return value
-  if (/\s*\(t\)\s*$/.test(value)) return value.replace(/\s*\(t\)\s*$/, TEST_MARK)
-  return value + TEST_MARK
+  return String(text ?? '')
 }
 
 const STATUS_CLASS = {
@@ -78,29 +153,28 @@ const REAL_GAMES = [
 ]
 
 const MATCHES = [
-  ['호주 NSW NPL', '시드니 올림픽 vs 시드니 유나이티드 58', 3, 25000],
-  ['호주 NSW NPL', '맨리 유나이티드 vs NWS 스피릿', 3, 25000],
-  ['MLB', '샌디에이고 파드리스 vs 워싱턴 내셔널스', 1, 10000],
-  ['MLB', '밀워키 브루어스 vs 시카고 컵스', 2, 30000],
-  ['MLB', '디트로이트 타이거스 vs 미네소타 트윈스', 2, 17000],
-  ['EPL (t)', '맨체스터 시티 vs 아스널 (t)', 2, 26000],
-  ['NBA (t)', '보스턴 셀틱스 vs 뉴욕 닉스 (t)', 1, 12000],
-  ['NBA (t)', 'LA 레이커스 vs 골든스테이트 (t)', 1, 8000],
-  ['EPL (t)', '토트넘 vs 첼시 (t)', 1, 9000],
+  ['EPL', '리버풀 vs 첼시', 10, 220800],
+  ['NBA', '보스턴 셀틱스 vs 뉴욕 닉스', 4, 28000],
+  ['EPL', '토트넘 vs 아스널', 3, 27000],
+  ['MLB', '탬파베이 레이스 vs 클리블랜드 가디언스', 3, 23000],
+  ['KBO', 'KIA 타이거즈 vs LG 트윈스', 4, 35000],
+  ['K리그1', '울산 HD vs 전북 현대', 3, 28000],
+  ['EPL', '맨체스터 시티 vs 아스널', 3, 26000],
+  ['KBL', '서울 SK vs 원주 DB', 2, 20000],
 ]
 
 const BETS = [
-  ['test', '테스트유저 (t)', '밀워키 브루어스 vs 시카고 컵스', 10000, '4.127', 42504, '진행 중'],
-  ['test', '테스트유저 (t)', '디트로이트 타이거스 vs 미네소타 트윈스', 10000, '9.024', 92943, '진행 중'],
-  ['test', '테스트유저 (t)', '시드니 올림픽 vs 시드니 유나이티드 58', 10000, '10.088', 100879, '미적중'],
-  ['test', '테스트유저 (t)', '시드니 올림픽 vs 시드니 유나이티드 58', 5000, '12.774', 66424, '적중'],
-  ['test123', '테스트용 (t)', '맨체스터 시티 vs 아스널 (t)', 15000, '2.150', 32250, '진행 중'],
-  ['user03', '회원03 (t)', '보스턴 셀틱스 vs 뉴욕 닉스 (t)', 12000, '1.900', 22800, '진행 중'],
-  ['user05', '회원05 (t)', 'LA 레이커스 vs 골든스테이트 (t)', 8000, '1.850', 14800, '진행 중'],
-  ['test', '테스트유저 (t)', '토트넘 vs 첼시 (t)', 9000, '3.200', 28800, '진행 중'],
-  ['user03', '회원03 (t)', '밀워키 브루어스 vs 시카고 컵스', 20000, '1.750', 35000, '진행 중'],
-  ['test123', '테스트용 (t)', '디트로이트 타이거스 vs 미네소타 트윈스', 7000, '2.450', 17150, '진행 중'],
-  ['user05', '회원05 (t)', '맨체스터 시티 vs 아스널 (t)', 11000, '1.950', 21450, '진행 중'],
+  ['leesu', '이수민', '리버풀 vs 첼시', 10000, '1.750', 17500, '진행 중'],
+  ['leesu', '이수민', 'KIA 타이거즈 vs LG 트윈스', 10000, '2.000', 20000, '적중'],
+  ['leesu', '이수민', '울산 HD vs 전북 현대', 8000, '3.400', 27200, '진행 중'],
+  ['yoonah', '윤아현', '맨체스터 시티 vs 아스널', 15000, '2.150', 32250, '진행 중'],
+  ['yoonah', '윤아현', 'KIA 타이거즈 vs LG 트윈스', 10000, '2.000', 20000, '미적중'],
+  ['kangst', '강서준', '보스턴 셀틱스 vs 뉴욕 닉스', 12000, '1.900', 22800, '진행 중'],
+  ['seojw', '서준우', '서울 SK vs 원주 DB', 8000, '1.850', 14800, '진행 중'],
+  ['parkdh', '박도현', '토트넘 vs 아스널', 9000, '3.200', 28800, '진행 중'],
+  ['kangst', '강서준', '리버풀 vs 첼시', 20000, '1.750', 35000, '진행 중'],
+  ['yoonah', '윤아현', '탬파베이 레이스 vs 클리블랜드 가디언스', 7000, '2.450', 17150, '진행 중'],
+  ['seojw', '서준우', '맨체스터 시티 vs 아스널', 11000, '1.950', 21450, '진행 중'],
 ]
 
 const BET_MARKETS = {
@@ -118,22 +192,24 @@ const BET_MARKETS = {
 }
 
 const BASE_USERS = {
-  test: { nick: '테스트유저 (t)', money: 66924, points: 0, blocked: false },
-  test123: { nick: '테스트용 (t)', money: 10000, points: 0, blocked: false },
-  user03: { nick: '회원03 (t)', money: 18500, points: 200, blocked: false },
-  user04: { nick: '회원04 (t)', money: 12400, points: 0, blocked: true, blockReason: '중복 계정 (t)' },
-  user05: { nick: '회원05 (t)', money: 8600, points: 50, blocked: false },
+  leesu: { nick: '이수민', money: 250000, points: 0, blocked: false },
+  yoonah: { nick: '윤아현', money: 251000, points: 0, blocked: false },
+  kangst: { nick: '강서준', money: 252000, points: 200, blocked: false },
+  hansy: { nick: '한소연', money: 0, points: 0, blocked: true, blockReason: '중복 계정' },
+  seojw: { nick: '서준우', money: 253000, points: 50, blocked: false },
+  parkdh: { nick: '박도현', money: 200000, points: 0, blocked: false },
+  kimjs: { nick: '김지성', money: 500000, points: 0, blocked: false },
 }
 
 const CAPTURED_CASH = {
-  9: { login: 'test123', type: '입금', amount: 10000, status: '승인' },
-  8: { login: 'test', type: '출금', amount: 20000, status: '지급 실패' },
-  7: { login: 'test', type: '출금', amount: 20000, status: '지급 실패' },
-  6: { login: 'test', type: '출금', amount: 20000, status: '지급 실패' },
-  5: { login: 'test', type: '입금', amount: 20000, status: '거절' },
-  4: { login: 'test', type: '입금', amount: 10000, status: '승인' },
-  3: { login: 'test', type: '입금', amount: 10000, status: '거절' },
-  2: { login: 'test', type: '입금', amount: 10000, status: '거절' },
+  9: { login: 'yoonah', type: '입금', amount: 10000, status: '승인' },
+  8: { login: 'leesu', type: '출금', amount: 20000, status: '지급 실패' },
+  7: { login: 'leesu', type: '출금', amount: 20000, status: '지급 실패' },
+  6: { login: 'leesu', type: '출금', amount: 20000, status: '지급 실패' },
+  5: { login: 'leesu', type: '입금', amount: 20000, status: '거절' },
+  4: { login: 'leesu', type: '입금', amount: 10000, status: '승인' },
+  3: { login: 'leesu', type: '입금', amount: 10000, status: '거절' },
+  2: { login: 'leesu', type: '입금', amount: 10000, status: '거절' },
   1: { login: 'admin', type: '입금', amount: 10000, status: '거절' },
 }
 
@@ -224,9 +300,9 @@ function store() {
   data.distSettles ||= []
   if (data.distBalance == null && !Array.isArray(data.distSettles)) data.distBalance = 48200
   data.boardPosts ||= [
-    { board: '1', title: '준플레이오프 안내 (t)', body: '10월 20일 KIA 대 LG 3차전 일정이 잡혀 있습니다. 시작 시각은 아직 비어 있습니다. (t)' },
-    { board: '2', title: '입금 반영 안내 (t)', body: '승인된 입금은 회원 머니와 머니 내역에 같이 반영됩니다. (t)' },
-    { board: '3', title: '광주 2차전 (t)', body: 'LG 3:6 KIA로 끝났고, 시리즈는 KIA가 2승입니다. (t)' },
+    { board: '1', title: '준플레이오프 안내', body: '10월 20일 KIA 대 LG 3차전 일정이 잡혀 있습니다. 시작 시각은 아직 비어 있습니다.' },
+    { board: '2', title: '입금 반영 안내', body: '승인된 입금은 회원 머니와 머니 내역에 같이 반영됩니다.' },
+    { board: '3', title: '광주 2차전', body: 'LG 3:6 KIA로 끝났고, 시리즈는 KIA가 2승입니다.' },
   ]
   data.nextId ||= 100
   let migrated = false
@@ -247,8 +323,8 @@ function store() {
     }))
     if (!data.inquiries.length) {
       data.inquiries = [
-        { id: 't-inq-1', title: '입금 미반영 문의 (t)', body: '오전에 입금했는데 아직 안 들어왔습니다. (t)', status: '대기', answer: '' },
-        { id: 't-inq-2', title: '출금 지연 문의 (t)', body: '출금 심사 상태입니다. (t)', status: '답변', answer: '심사 후 지급 예정입니다. (t)' },
+        { id: 'inq-1', title: '입금 미반영 문의', body: '오전에 입금했는데 아직 안 들어왔습니다.', status: '대기', answer: '' },
+        { id: 'inq-2', title: '출금 지연 문의', body: '출금 심사 상태입니다.', status: '답변', answer: '심사 후 지급 예정입니다.' },
       ]
     } else {
       data.inquiries = data.inquiries.map((item) => ({
@@ -260,41 +336,41 @@ function store() {
     }
     if (!data.banners.length) {
       data.banners = [
-        { title: '첫 입금 이벤트 (t)', on: true },
-        { title: '주말 보너스 (t)', on: false },
+        { title: '첫 입금 이벤트', on: true },
+        { title: '주말 보너스', on: false },
       ]
     } else {
       data.banners = data.banners.map((item) => ({ ...item, title: testTag(item.title) }))
     }
     if (!data.messages.length) {
       data.messages = [
-        { title: '입금 안내 (t)', body: '최소 입금은 1만원입니다. (t)', read: false, at: now },
-        { title: '이벤트 공지 (t)', body: '주말 보너스가 진행 중입니다. (t)', read: true, at: now },
+        { title: '입금 안내', body: '최소 입금은 1만원입니다.', read: false, at: now },
+        { title: '이벤트 공지', body: '주말 보너스가 진행 중입니다.', read: true, at: now },
       ]
     } else {
       data.messages = data.messages.map((item) => ({ ...item, title: testTag(item.title), body: testTag(item.body) }))
     }
     if (!data.logs.length) {
       data.logs = [
-        { at: now, text: '테스트 관리자 로그인 (t)' },
-        { at: now, text: '테스트 입금 승인 처리 (t)' },
-        { at: now, text: '테스트 배너 노출 변경 (t)' },
+        { at: now, text: '관리자 로그인' },
+        { at: now, text: '입금 승인 처리' },
+        { at: now, text: '배너 노출 변경' },
       ]
     } else {
       data.logs = data.logs.map((item) => ({ ...item, text: testTag(item.text) }))
     }
     if (!data.pointMoves.length) {
       data.pointMoves = [
-        { login: 'test', amount: 1000, at: now, reason: '지급' },
-        { login: 'test123', amount: 500, at: now, reason: '지급' },
-        { login: 'user05', amount: 50, at: now, reason: '지급' },
+        { login: 'leesu', amount: 1000, at: now, reason: '지급' },
+        { login: 'yoonah', amount: 500, at: now, reason: '지급' },
+        { login: 'seojw', amount: 50, at: now, reason: '지급' },
       ]
     }
     if (!data.cashExtra.length) {
       data.cashExtra = [
-        { id: 't-cash-1', login: 'test', nick: '테스트유저 (t)', type: '입금', amount: 50000, status: '승인', memo: '계좌이체 (t)', requestedAt: now, processedAt: now },
-        { id: 't-cash-2', login: 'test123', nick: '테스트용 (t)', type: '출금', amount: 20000, status: '대기', memo: 'USDT (t)', requestedAt: now },
-        { id: 't-cash-3', login: 'user03', nick: '회원03 (t)', type: '입금', amount: 30000, status: '승인', memo: 'P2P (t)', requestedAt: now, processedAt: now },
+        { id: 'cash-1', login: 'leesu', nick: '이수민', type: '입금', amount: 50000, status: '승인', memo: '계좌이체', requestedAt: now, processedAt: now },
+        { id: 'cash-2', login: 'yoonah', nick: '윤아현', type: '출금', amount: 20000, status: '대기', memo: 'USDT', requestedAt: now },
+        { id: 'cash-3', login: 'kangst', nick: '강서준', type: '입금', amount: 30000, status: '승인', memo: 'P2P', requestedAt: now, processedAt: now },
       ]
     } else {
       data.cashExtra = data.cashExtra.map((item) => ({
@@ -305,28 +381,28 @@ function store() {
     }
     if (!data.casinoVisits.length) {
       data.casinoVisits = [
-        { name: '에볼루션 (t)', at: now },
-        { name: '프라그마틱 (t)', at: now },
-        { name: '파워볼 (t)', at: now },
+        { name: '에볼루션', at: now },
+        { name: '프라그마틱', at: now },
+        { name: '파워볼', at: now },
       ]
     } else {
       data.casinoVisits = data.casinoVisits.map((item) => ({ ...item, name: testTag(item.name) }))
     }
     if (!data.casinoBets.length) {
       data.casinoBets = [
-        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)', kind: 'live' },
-        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)', kind: 'other' },
-        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛 (t)', kind: 'live' },
-        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
-        { login: 'test123', nick: '테스트용 (t)', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯 (t)', kind: 'slot' },
+        { login: 'leesu', nick: '이수민', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라', kind: 'live' },
+        { login: 'yoonah', nick: '윤아현', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯', kind: 'slot' },
+        { login: 'leesu', nick: '이수민', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼', kind: 'other' },
+        { login: 'kangst', nick: '강서준', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라', kind: 'live' },
+        { login: 'leesu', nick: '이수민', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛', kind: 'live' },
+        { login: 'seojw', nick: '서준우', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯', kind: 'slot' },
+        { login: 'yoonah', nick: '윤아현', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯', kind: 'slot' },
       ]
     }
     if (!data.distSettles.length) {
       data.distSettles = [
-        { when: now, accrued: 12000, balance: 48200, line: 'A라인 (t)' },
-        { when: now, accrued: 8000, balance: 36000, line: 'B라인 (t)' },
+        { when: now, accrued: 12000, balance: 48200, line: '강남라인' },
+        { when: now, accrued: 8000, balance: 36000, line: '부산라인' },
       ]
       if (data.distBalance == null) data.distBalance = 48200
     }
@@ -334,20 +410,20 @@ function store() {
     migrated = true
   }
   if (data.riskSeedApplied !== 1) {
-    data.matchStatus['맨체스터 시티 vs 아스널 (t)'] = '라이브'
+    data.matchStatus['리버풀 vs 첼시'] = '라이브'
     data.riskSeedApplied = 1
     migrated = true
   }
   if (data.casinoMemberSeed !== 1) {
     if (!(data.casinoBets || []).every((bet) => bet.login)) {
       data.casinoBets = [
-        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)', kind: 'live' },
-        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)', kind: 'other' },
-        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛 (t)', kind: 'live' },
-        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
-        { login: 'test123', nick: '테스트용 (t)', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯 (t)', kind: 'slot' },
+        { login: 'leesu', nick: '이수민', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라', kind: 'live' },
+        { login: 'yoonah', nick: '윤아현', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯', kind: 'slot' },
+        { login: 'leesu', nick: '이수민', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼', kind: 'other' },
+        { login: 'kangst', nick: '강서준', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라', kind: 'live' },
+        { login: 'leesu', nick: '이수민', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛', kind: 'live' },
+        { login: 'seojw', nick: '서준우', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯', kind: 'slot' },
+        { login: 'yoonah', nick: '윤아현', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯', kind: 'slot' },
       ]
     }
     data.casinoMemberSeed = 1
@@ -363,12 +439,12 @@ function store() {
     )
     if (!openKinds.has('live')) {
       data.casinoBets.push({
-        login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live',
+        login: 'kangst', nick: '강서준', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라', kind: 'live',
       })
     }
     if (!openKinds.has('slot')) {
       data.casinoBets.push({
-        login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot',
+        login: 'seojw', nick: '서준우', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯', kind: 'slot',
       })
     }
     data.casinoKindSeed = 1
@@ -1095,28 +1171,28 @@ function paintSettleSamples() {
     { label: 'J라인', value: 7000, sub: '1건' },
   ])
   paintSettleSampleRows('적자 회원', [
-    { label: '테스트유저 (test)', value: 61424, sub: '' },
-    { label: '테스트용 (test123)', value: 22000, sub: '' },
-    { label: '회원03 (user03)', value: 18500, sub: '' },
-    { label: '회원04 (user04)', value: 16200, sub: '' },
-    { label: '회원05 (user05)', value: 14800, sub: '' },
-    { label: '회원06 (user06)', value: 12100, sub: '' },
-    { label: '회원07 (user07)', value: 9800, sub: '' },
-    { label: '회원08 (user08)', value: 8600, sub: '' },
-    { label: '회원09 (user09)', value: 7200, sub: '' },
-    { label: '회원10 (user10)', value: 5400, sub: '' },
+    { label: '이수민 (leesu)', value: 61424, sub: '' },
+    { label: '윤아현 (yoonah)', value: 22000, sub: '' },
+    { label: '강서준 (kangst)', value: 18500, sub: '' },
+    { label: '한소연 (hansy)', value: 16200, sub: '' },
+    { label: '서준우 (seojw)', value: 14800, sub: '' },
+    { label: '황서연 (hwangsy)', value: 12100, sub: '' },
+    { label: '안지훈 (anjw)', value: 9800, sub: '' },
+    { label: '문하윤 (moonhy)', value: 8600, sub: '' },
+    { label: '이재호 (jaeho)', value: 7200, sub: '' },
+    { label: '박도현 (parkdh)', value: 5400, sub: '' },
   ])
   paintSettleSampleRows('흑자 회원', [
-    { label: '테스트유저 (test)', value: 10000, sub: '' },
+    { label: '김지성 (kimjs)', value: 10000, sub: '' },
     { label: '관리자 (admin)', value: 5000, sub: '' },
-    { label: '회원03 (user03)', value: 4600, sub: '' },
-    { label: '회원04 (user04)', value: 4200, sub: '' },
-    { label: '회원05 (user05)', value: 3900, sub: '' },
-    { label: '회원06 (user06)', value: 3500, sub: '' },
-    { label: '회원07 (user07)', value: 3100, sub: '' },
-    { label: '회원08 (user08)', value: 2700, sub: '' },
-    { label: '회원09 (user09)', value: 2300, sub: '' },
-    { label: '회원10 (user10)', value: 1900, sub: '' },
+    { label: '강서준 (kangst)', value: 4600, sub: '' },
+    { label: '한소연 (hansy)', value: 4200, sub: '' },
+    { label: '서준우 (seojw)', value: 3900, sub: '' },
+    { label: '황서연 (hwangsy)', value: 3500, sub: '' },
+    { label: '안지훈 (anjw)', value: 3100, sub: '' },
+    { label: '문하윤 (moonhy)', value: 2700, sub: '' },
+    { label: '이재호 (jaeho)', value: 2300, sub: '' },
+    { label: '박도현 (parkdh)', value: 1900, sub: '' },
   ])
 }
 
@@ -1643,7 +1719,7 @@ function paintLinked() {
     })
   })
   const balanceLine = [...root.querySelectorAll('p')].find((item) => item.textContent.includes('머니') && item.textContent.includes('포인트'))
-  if (balanceLine && data.users.test) balanceLine.textContent = `머니 ${num(data.users.test.money)} · 포인트 ${num(data.users.test.points)}P`
+  if (balanceLine && data.users.leesu) balanceLine.textContent = `머니 ${num(data.users.leesu.money)} · 포인트 ${num(data.users.leesu.points)}P`
   root.querySelectorAll('[data-linked-row]').forEach((row) => row.remove())
   const tx = [...root.querySelectorAll('table')].find((table) => (table.tHead?.innerText || '').includes('거래 후 머니'))
   if (tx?.tBodies[0]) {
@@ -1734,28 +1810,7 @@ function centerTables() {
   alignMatchColumns(document.querySelector('[data-lower-board]'))
 }
 
-function stampDemoMarks(root = document) {
-  const pairs = [
-    ['테스트유저', '테스트유저 (t)'],
-    ['테스트용', '테스트용 (t)'],
-    ['회원03', '회원03 (t)'],
-    ['회원04', '회원04 (t)'],
-    ['회원05', '회원05 (t)'],
-  ]
-  const walker = document.createTreeWalker(root.body || root, NodeFilter.SHOW_TEXT)
-  const nodes = []
-  while (walker.nextNode()) nodes.push(walker.currentNode)
-  nodes.forEach((node) => {
-    if (node.parentElement?.closest('script, style, textarea, input, select')) return
-    let text = node.textContent
-    let next = text
-    for (const [from, to] of pairs) {
-      if (!next.includes(from) || next.includes(to)) continue
-      next = next.split(from).join(to)
-    }
-    if (next !== text) node.textContent = next
-  })
-}
+function stampDemoMarks() {}
 
 function refreshTables() {
   if (document.getElementById('bet-history-root')) return
@@ -1967,7 +2022,7 @@ function realRows(games) {
 }
 
 function realBoard(title, games) {
-  return panel(title, `<p class="text-xs text-muted">2026년 10월 KBO 포스트시즌과 MLB 리그 챔피언십 발표 일정·결과입니다. 테스트 항목에는 (t)가 붙습니다.</p>${tableWrap(['리그', '시각', '경기', '스코어', '내용', '상태'], [realRows(games)])}`)
+  return panel(title, `<p class="text-xs text-muted">2026년 10월 KBO 포스트시즌과 MLB 리그 챔피언십 발표 일정·결과입니다.</p>${tableWrap(['리그', '시각', '경기', '스코어', '내용', '상태'], [realRows(games)])}`)
 }
 
 function sectionOf(title) {
@@ -2432,6 +2487,7 @@ function showRiskLoadError(on) {
 
 async function fetchRiskJson(path) {
   const res = await fetch(path, { credentials: 'include' })
+  if (redirectIfAuthLost(res)) throw new Error('auth')
   if (!res.ok) throw new Error(`${path} ${res.status}`)
   return res.json()
 }
@@ -3361,9 +3417,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'void_review',
       flagged: true,
-      login: 'test',
-      nick: '테스트유저 (t)',
-      match: '밀워키 브루어스 vs 시카고 컵스',
+      login: 'leesu',
+      nick: '이수민',
+      match: '리버풀 vs 첼시',
       market: '핸디캡',
       selection: '-1.5',
       stake: 10000,
@@ -3386,9 +3442,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'weak_evidence',
       flagged: true,
-      login: 'test123',
-      nick: '테스트용 (t)',
-      match: '맨체스터 시티 vs 아스널 (t)',
+      login: 'yoonah',
+      nick: '윤아현',
+      match: '맨체스터 시티 vs 아스널',
       market: '핸디캡',
       selection: '-0.5',
       stake: 15000,
@@ -3411,9 +3467,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'ambiguous',
       flagged: true,
-      login: 'user03',
-      nick: '회원03 (t)',
-      match: '디트로이트 타이거스 vs 미네소타 트윈스',
+      login: 'kangst',
+      nick: '강서준',
+      match: '탬파베이 레이스 vs 클리블랜드 가디언스',
       market: '언더오버',
       selection: '8.5',
       stake: 7000,
@@ -3436,9 +3492,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'void_review',
       flagged: true,
-      login: 'user05',
-      nick: '회원05 (t)',
-      match: '토트넘 vs 첼시 (t)',
+      login: 'seojw',
+      nick: '서준우',
+      match: '토트넘 vs 아스널',
       market: '승무패',
       selection: '무',
       stake: 9000,
@@ -3461,9 +3517,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'not_won',
       flagged: true,
-      login: 'test',
-      nick: '테스트유저 (t)',
-      match: '시드니 올림픽 vs 시드니 유나이티드 58',
+      login: 'leesu',
+      nick: '이수민',
+      match: '울산 HD vs 전북 현대',
       market: '언더오버',
       selection: '2.5',
       stake: 10000,
@@ -3486,9 +3542,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'ambiguous',
       flagged: true,
-      login: 'user03',
-      nick: '회원03 (t)',
-      match: '보스턴 셀틱스 vs 뉴욕 닉스 (t)',
+      login: 'kangst',
+      nick: '강서준',
+      match: '보스턴 셀틱스 vs 뉴욕 닉스',
       market: '언더오버',
       selection: '215.5',
       stake: 12000,
@@ -4062,7 +4118,7 @@ function search(placeholder) {
 }
 
 function note() {
-  return `<p class="text-xs text-muted">저장된 원본 본문이 없어, 입출금·머니내역·정산 화면과 같은 목록 패턴으로 구성했습니다. 테스트 데이터에는 항상 (t)가 붙으며, 실제 연동 후 (t) 항목만 지우면 됩니다.</p>`
+  return `<p class="text-xs text-muted">저장된 원본 본문이 없어, 입출금·머니내역·정산 화면과 같은 목록 패턴으로 구성했습니다.</p>`
 }
 
 function matchCards(games) {
@@ -4106,7 +4162,7 @@ function markCart() {
 }
 
 function richPage(path, data) {
-  const user = data.users.test
+  const user = data.users.leesu
   if (path.endsWith('/users.html') || path.endsWith('/blacklist.html')) {
     const onlyBlocked = path.endsWith('/blacklist.html')
     const people = Object.entries(data.users).filter(([, item]) => (onlyBlocked ? item.blocked : true))
@@ -4138,7 +4194,7 @@ function richPage(path, data) {
   }
   if (path.endsWith('/points.html')) {
     const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(memberLabel(data.users[move.login]?.nick || move.login, move.login))}${cell(Number(move.amount) > 0 ? '지급' : '회수')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('test 포인트', user.points.toLocaleString('ko-KR') + 'P')}${stat('test123 포인트', data.users.test123.points.toLocaleString('ko-KR') + 'P')}</div>${panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'test', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form>${chips(['전체', '지급', '회수'])}${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('이수민 포인트', user.points.toLocaleString('ko-KR') + 'P')}${stat('윤아현 포인트', data.users.yoonah.points.toLocaleString('ko-KR') + 'P')}</div>${panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'leesu', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form>${chips(['전체', '지급', '회수'])}${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/logs.html')) {
     const rows = data.logs.map((item) => `<tr class="border-b border-edge-soft">${cell(item.at, 'text-muted')}${cell(item.text)}</tr>`).join('')
@@ -4172,8 +4228,8 @@ function richPage(path, data) {
     return `<div class="space-y-4">${note()}${panel(path.endsWith('/live.html') ? '예정 경기' : '전체 경기', matchCards(games))}</div>`
   }
   if (path.endsWith('/my-bets.html')) {
-    const placed = data.placedBets.filter((bet) => bet.login === 'test').map((bet) => `<tr class="border-b border-edge-soft">${cell(testTag(bet.match), 'font-bold')}${cell(testTag(bet.pick))}${cell(Number(bet.stake).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(String(bet.odds), 'text-right')}${cell(`<span class="${STATUS_CLASS[bet.status] || ''}">${bet.status}</span>`)}${cell(bet.at)}</tr>`)
-    const saved = BETS.filter((item) => item[0] === 'test').map((item) => {
+    const placed = data.placedBets.filter((bet) => bet.login === 'leesu').map((bet) => `<tr class="border-b border-edge-soft">${cell(testTag(bet.match), 'font-bold')}${cell(testTag(bet.pick))}${cell(Number(bet.stake).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(String(bet.odds), 'text-right')}${cell(`<span class="${STATUS_CLASS[bet.status] || ''}">${bet.status}</span>`)}${cell(bet.at)}</tr>`)
+    const saved = BETS.filter((item) => item[0] === 'leesu').map((item) => {
       const index = BETS.indexOf(item)
       const current = data.betStatus[index] || item[6]
       return `<tr class="border-b border-edge-soft">${cell(testTag(item[2]), 'font-bold')}${cell('-')}${cell(item[3].toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item[4], 'text-right')}${cell(`<span class="${STATUS_CLASS[current]}">${current}</span>`)}${cell('-')}</tr>`
@@ -4182,7 +4238,7 @@ function richPage(path, data) {
   }
   if (path.endsWith('/user-cash.html')) {
     const policy = data.settings['입출금 정책']?.['등급없음'] || []
-    const rows = data.cashExtra.filter((item) => item.login === 'test').map((item) => `<tr class="border-b border-edge-soft">${cell(item.type)}${cell(Number(item.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item.memo || '-')}${cell(`<span class="${STATUS_CLASS[item.status] || ''}">${item.status}</span>`)}${cell(item.requestedAt || '-')}</tr>`).join('')
+    const rows = data.cashExtra.filter((item) => item.login === 'leesu').map((item) => `<tr class="border-b border-edge-soft">${cell(item.type)}${cell(Number(item.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item.memo || '-')}${cell(`<span class="${STATUS_CLASS[item.status] || ''}">${item.status}</span>`)}${cell(item.requestedAt || '-')}</tr>`).join('')
     return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('보유 머니', user.money.toLocaleString('ko-KR'))}${stat('최소 입금', Number(policy[0] ?? 10000).toLocaleString('ko-KR'))}${stat('1회 최대 출금', Number(policy[2] ?? 10000000).toLocaleString('ko-KR'))}</div>${panel('입출금', `${chips(['전체', '입금', '출금', '대기', '승인', '거절', '계좌', 'USDT'])}<form data-user-cash class="space-y-3"><select data-field="type" class="h-10 rounded-lg border border-edge bg-input px-3 text-sm font-bold"><option>입금</option><option>출금</option></select><div class="flex flex-wrap gap-1"><button type="button" data-preset="10000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">1만</button><button type="button" data-preset="50000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">5만</button><button type="button" data-preset="100000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">10만</button></div>${field('금액', '10000', 'amount', 'number')}${field('메모', '', 'memo')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">신청</button></form><p data-cash-result class="text-sm font-bold text-accent"></p>${tableWrap(['유형', '금액', '메모', '상태', '시각'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">신청 내역이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/account.html')) {
@@ -4249,7 +4305,7 @@ function renderPlaceholder() {
   }
   if (path.endsWith('/points.html')) {
     const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(memberLabel(data.users[move.login]?.nick || move.login, move.login))}${cell(move.reason || '지급')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
-    replacePlaceholder(panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'test', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form><div class="text-sm text-dim">테스트유저 ${data.users.test.points.toLocaleString('ko-KR')}P · 테스트용 ${data.users.test123.points.toLocaleString('ko-KR')}P</div>${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`))
+    replacePlaceholder(panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'leesu', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form><div class="text-sm text-dim">이수민 ${data.users.leesu.points.toLocaleString('ko-KR')}P · 윤아현 ${data.users.yoonah.points.toLocaleString('ko-KR')}P</div>${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`))
     return true
   }
   if (path.endsWith('/logs.html')) {
@@ -4277,7 +4333,7 @@ function renderPlaceholder() {
     return true
   }
   if (path.endsWith('/home.html')) {
-    const user = data.users.test
+    const user = data.users.leesu
     replacePlaceholder(`<div class="space-y-4"><div class="grid gap-3 sm:grid-cols-3"><a class="rounded-xl border border-edge bg-card p-4" href="/nex/casino-live.html"><div class="text-xs text-muted">카지노</div><div class="mt-1 font-black">입장</div></a><a class="rounded-xl border border-edge bg-card p-4" href="/nex/my-bets.html"><div class="text-xs text-muted">베팅</div><div class="mt-1 font-black">${BETS.length}건</div></a><a class="rounded-xl border border-edge bg-card p-4" href="/nex/user-cash.html"><div class="text-xs text-muted">보유 머니</div><div class="mt-1 font-black text-accent">${user.money.toLocaleString('ko-KR')}</div></a></div>${realBoard('실제 경기', REAL_GAMES.slice(0, 5))}</div>`)
     return true
   }
@@ -4287,12 +4343,12 @@ function renderPlaceholder() {
     return true
   }
   if (path.endsWith('/user-cash.html')) {
-    const user = data.users.test
+    const user = data.users.leesu
     replacePlaceholder(panel('입출금', `<p class="text-sm text-dim">보유 머니 ${user.money.toLocaleString('ko-KR')}</p><form data-user-cash class="flex flex-wrap items-end gap-2"><select data-field="type" class="h-10 rounded-lg border border-edge bg-input px-3 text-sm font-bold"><option>입금</option><option>출금</option></select>${field('금액', '10000', 'amount', 'number')}${field('메모', '', 'memo')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">신청</button></form><p data-cash-result class="text-sm font-bold text-accent"></p>`))
     return true
   }
   if (path.endsWith('/account.html')) {
-    const user = data.users.test
+    const user = data.users.leesu
     replacePlaceholder(panel('내 정보', `<form data-account class="max-w-md space-y-3">${field('닉네임', user.nick, 'nick')}<p class="text-sm text-dim">머니 ${user.money.toLocaleString('ko-KR')} · 포인트 ${user.points.toLocaleString('ko-KR')}P</p><button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">저장</button></form>`))
     return true
   }
@@ -4468,7 +4524,7 @@ function bindBoardQueue() {
   if (!empty) return
   const data = store()
   if (!data.boardQueue) {
-    data.boardQueue = [{ id: 1, author: '테스트유저', title: '오늘 경기 응원글', hidden: false }]
+    data.boardQueue = [{ id: 1, author: '이수민', title: '오늘 경기 응원글', hidden: false }]
     commit(data)
   }
   const host = empty.parentElement
@@ -4512,8 +4568,8 @@ function bindPageForms() {
       if (type === '입금' && amount < minIn) return toast(`최소 입금액은 ${minIn.toLocaleString('ko-KR')}입니다.`)
       if (type === '출금' && amount < minOut) return toast(`최소 출금액은 ${minOut.toLocaleString('ko-KR')}입니다.`)
       if (type === '출금' && amount > maxOut) return toast(`1회 최대 출금액은 ${maxOut.toLocaleString('ko-KR')}입니다.`)
-      if (type === '출금' && latest.users.test.money < amount) return toast('보유 머니가 부족합니다.')
-      latest.cashExtra.unshift({ id: latest.nextId++, login: 'test', nick: latest.users.test.nick, type, amount, memo: memoText, status: '대기', requestedAt: stamp(), processedAt: '' })
+      if (type === '출금' && latest.users.leesu.money < amount) return toast('보유 머니가 부족합니다.')
+      latest.cashExtra.unshift({ id: latest.nextId++, login: 'leesu', nick: latest.users.leesu.nick, type, amount, memo: memoText, status: '대기', requestedAt: stamp(), processedAt: '' })
       logAction(latest, `회원 ${type} 신청 ${amount.toLocaleString('ko-KR')}`)
       commit(latest)
       const result = document.querySelector('[data-cash-result]')
@@ -4525,7 +4581,7 @@ function bindPageForms() {
       const latest = store()
       const nick = form.querySelector('[data-field="nick"]').value.trim()
       if (!nick) return toast('닉네임을 입력해 주세요.')
-      latest.users.test.nick = nick
+      latest.users.leesu.nick = nick
       logAction(latest, `닉네임 변경 ${nick}`)
       commit(latest)
       toast('저장했습니다.')
@@ -4598,7 +4654,7 @@ function bindPageForms() {
       const approved = latest.cashExtra.filter((item) => item.status === '승인')
       const result = document.querySelector('[data-audit-result]')
       const line = approved.length
-        ? `대조 완료. 추가 처리 ${approved.length}건, 회원 머니 테스트유저 ${latest.users.test.money.toLocaleString('ko-KR')}`
+        ? `대조 완료. 추가 처리 ${approved.length}건, 회원 머니 이수민 ${latest.users.leesu.money.toLocaleString('ko-KR')}`
         : '대조 완료. 추가 승인 건이 없어 캡처 잔액과 같습니다.'
       if (result) result.textContent = line
       logAction(latest, '정산 대조 실행')
@@ -4631,7 +4687,7 @@ function bindPageForms() {
     const odd = event.target.closest('[data-odd]')
     if (odd) {
       const latest = store()
-      if (latest.users.test.blocked) return toast('차단된 회원은 베팅할 수 없습니다.')
+      if (latest.users.leesu.blocked) return toast('차단된 회원은 베팅할 수 없습니다.')
       latest.slip.push({ match: odd.dataset.match, pick: odd.dataset.pick, odds: Number(odd.dataset.odd) })
       commit(latest)
       paintSlip('show')
@@ -4700,10 +4756,10 @@ function bindPageForms() {
       const min = Number(latest.settings['베팅 한도']?.['등급없음']?.[0] || 1000)
       if (!latest.slip.length) return toast('베팅카트가 비어 있습니다.')
       if (!stake || stake < min) return toast(`최소 베팅금은 ${min.toLocaleString('ko-KR')}입니다.`)
-      if (latest.users.test.blocked) return toast('차단된 회원은 베팅할 수 없습니다.')
-      if (latest.users.test.money < stake * latest.slip.length) return toast('보유 머니가 부족합니다.')
+      if (latest.users.leesu.blocked) return toast('차단된 회원은 베팅할 수 없습니다.')
+      if (latest.users.leesu.money < stake * latest.slip.length) return toast('보유 머니가 부족합니다.')
       latest.slip.forEach((item) => {
-        latest.placedBets.unshift({ id: latest.nextId++, login: 'test', nick: latest.users.test.nick, match: item.match, pick: item.pick, odds: item.odds, stake, status: '진행 중', at: stamp() })
+        latest.placedBets.unshift({ id: latest.nextId++, login: 'leesu', nick: latest.users.leesu.nick, match: item.match, pick: item.pick, odds: item.odds, stake, status: '진행 중', at: stamp() })
       })
       latest.slip = []
       logAction(latest, `베팅 접수 ${stake.toLocaleString('ko-KR')}`)
@@ -4961,6 +5017,7 @@ function mountBetHistory() {
       fetch(`/api/bet-history?${q}`, { credentials: 'include' }),
       fetch(`/api/bet-history/summary?${q.replace(/&?cursor=[^&]*/, '').replace(/&?limit=\d+/, '')}`, { credentials: 'include' }),
     ])
+    if (redirectIfAuthLost(listRes) || redirectIfAuthLost(sumRes)) return
     if (!listRes.ok || !sumRes.ok) {
       fail()
       return

@@ -73,6 +73,8 @@ const KNOWN_API_ROUTES = [
   ['PUT', '/api/risk/settings'],
   ['GET', '/api/risk/stream'],
   ['GET', '/api/auth/me'],
+  ['GET', '/api/auth/otp'],
+  ['PATCH', '/api/auth/otp'],
   ['POST', '/api/auth/logout'],
   ['GET', '/api/bet-history'],
   ['GET', '/api/bet-history/summary'],
@@ -114,7 +116,8 @@ function samplePath(path: string) {
 function isPublic(method: string, path: string) {
   return (
     (method === 'GET' && path === '/api/health') ||
-    (method === 'POST' && path === '/api/auth/login')
+    (method === 'POST' && path === '/api/auth/login') ||
+    (method === 'GET' && path === '/api/auth/otp')
   )
 }
 
@@ -328,6 +331,50 @@ describe.sequential('관리자 세션 (e2e)', () => {
       .set('Cookie', cookie)
     expect(me.status).toBe(401)
     auth.now = () => Date.now()
+  })
+
+  it('OTP off면 코드 없이 로그인되고, 상담원은 바꾸지 못한다', async () => {
+    const origin = originOf()
+    const open = await request(app.getHttpServer()).get('/api/auth/otp')
+    expect(open.status).toBe(200)
+    expect(open.body.required).toBe(true)
+
+    const agentCookie = await login(app, agent)
+    const denied = await request(app.getHttpServer())
+      .patch('/api/auth/otp')
+      .set('Cookie', agentCookie)
+      .set('Origin', origin)
+      .send({ required: false })
+    expect(denied.status).toBe(403)
+
+    const cookie = await login(app, boss)
+    const off = await request(app.getHttpServer())
+      .patch('/api/auth/otp')
+      .set('Cookie', cookie)
+      .set('Origin', origin)
+      .send({ required: false })
+    expect(off.status).toBe(200)
+    expect(off.body.required).toBe(false)
+
+    const noCode = await request(app.getHttpServer()).post('/api/auth/login').send({
+      login: boss.login,
+      password: boss.password,
+    })
+    expect(noCode.status).toBe(200)
+
+    const on = await request(app.getHttpServer())
+      .patch('/api/auth/otp')
+      .set('Cookie', cookie)
+      .set('Origin', origin)
+      .send({ required: true })
+    expect(on.status).toBe(200)
+    expect(on.body.required).toBe(true)
+
+    const again = await request(app.getHttpServer()).post('/api/auth/login').send({
+      login: boss.login,
+      password: boss.password,
+    })
+    expect(again.status).toBe(401)
   })
 
   it('로그아웃 후 me 는 401', async () => {

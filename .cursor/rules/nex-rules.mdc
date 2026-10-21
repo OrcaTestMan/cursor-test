@@ -21,7 +21,7 @@ alwaysApply: true
 - 돈 관련 변경 후에는 `yarn workspace api money:verify-daily` mismatch 0 확인
 
 ## 3. 보안
-- 모든 /api/* 는 관리자 세션 필수 (예외: GET /api/health, POST /api/auth/login)
+- 모든 /api/* 는 관리자 세션 필수 (예외: GET /api/health, POST /api/auth/login, GET /api/auth/otp)
 - 새 API는 자동으로 막히는 구조 유지, 위험한 작업은 역할 검사
 - 비밀번호, 토큰, .env 값, TOTP는 채팅·로그·git·터미널 출력 금지
 - 서버 DB에 원격 접속 금지. 이 PC는 로컬 DB(127.0.0.1)만 사용

@@ -60,7 +60,7 @@ LIMIT 20
 `)
 
 // 배팅 추가 → summary 반영 실측
-const [user] = await sql`select id, money from nex_users where login='member01' limit 1`
+const [user] = await sql`select id, money from nex_users where login='leesu' limit 1`
 const [mkt] = await sql`
   select mk.id as market_id, mt.id as match_id, o.id as outcome_id
   from nex_markets mk

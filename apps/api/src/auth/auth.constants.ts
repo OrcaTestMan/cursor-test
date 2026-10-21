@@ -1,4 +1,5 @@
 export const SESSION_COOKIE = 'nex_admin_sid'
+export const OTP_SETTING_KEY = 'auth.otpRequired'
 export const IDLE_MS = 30 * 60 * 1000
 export const MAX_LIFE_MS = 12 * 60 * 60 * 1000
 export const FAIL_LIMIT = 5

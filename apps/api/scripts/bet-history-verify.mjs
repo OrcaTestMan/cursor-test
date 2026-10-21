@@ -1,6 +1,6 @@
 /**
  * 스포츠베팅 내역 화면 숫자 = SQL 직접 집계.
- * 기본 비교: login=hist01 (seed:reset 검증 회원).
+ * 기본 비교: login=parkdh (스포츠베팅 내역 검증 회원).
  */
 import postgres from 'postgres'
 
@@ -13,7 +13,7 @@ if (/211\.110\.16\.130/.test(dbUrl)) {
   process.exit(2)
 }
 
-const login = String(process.env.BET_HISTORY_LOGIN || 'hist01').trim()
+const login = String(process.env.BET_HISTORY_LOGIN || 'parkdh').trim()
 const sql = postgres(dbUrl, { max: 1 })
 
 const [screen] = await sql`
@@ -62,14 +62,14 @@ if (totalStake !== stakeLedger) {
 if (totalPaid !== paidLedger) {
   mismatches.push({ label: 'totalPaid', api: totalPaid, sql: paidLedger })
 }
-if (login === 'hist01' && totalStake !== 55000) {
-  mismatches.push({ label: 'hist01.totalStake', api: totalStake, sql: 55000 })
+if (login === 'parkdh' && totalStake !== 55000) {
+  mismatches.push({ label: 'parkdh.totalStake', api: totalStake, sql: 55000 })
 }
-if (login === 'hist01' && totalPaid !== 40000) {
-  mismatches.push({ label: 'hist01.totalPaid', api: totalPaid, sql: 40000 })
+if (login === 'parkdh' && totalPaid !== 40000) {
+  mismatches.push({ label: 'parkdh.totalPaid', api: totalPaid, sql: 40000 })
 }
-if (login === 'hist01' && companyPnl !== 15000) {
-  mismatches.push({ label: 'hist01.companyPnl', api: companyPnl, sql: 15000 })
+if (login === 'parkdh' && companyPnl !== 15000) {
+  mismatches.push({ label: 'parkdh.companyPnl', api: companyPnl, sql: 15000 })
 }
 
 const result = {

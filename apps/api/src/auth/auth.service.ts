@@ -13,6 +13,7 @@ import {
   adminAuditLogs,
   adminSessions,
   admins,
+  settings,
 } from '../db/schema.js'
 import { ADMIN_ROLE_LABEL, type AdminRole } from './admin-roles.js'
 import {
@@ -20,6 +21,7 @@ import {
   IDLE_MS,
   LOCK_MS,
   MAX_LIFE_MS,
+  OTP_SETTING_KEY,
   SESSION_COOKIE,
   cookieSecure,
 } from './auth.constants.js'
@@ -143,11 +145,14 @@ export class AuthService {
     }
 
     const passOk = await argon2.verify(admin.passwordHash, password)
-    let totpOk = false
-    try {
-      totpOk = verifySync({ secret: admin.totpSecret, token: totp }).valid
-    } catch {
-      totpOk = false
+    const otpRequired = await this.otpRequired()
+    let totpOk = !otpRequired
+    if (otpRequired) {
+      try {
+        totpOk = verifySync({ secret: admin.totpSecret, token: totp }).valid
+      } catch {
+        totpOk = false
+      }
     }
     if (!passOk || !totpOk) {
       const attempts = admin.failedAttempts + 1
@@ -291,6 +296,38 @@ export class AuthService {
     await this.db
       .delete(adminSessions)
       .where(lt(adminSessions.createdAt, new Date(now - MAX_LIFE_MS)))
+  }
+
+  async otpRequired() {
+    try {
+      const [row] = await this.db
+        .select({ value: settings.value })
+        .from(settings)
+        .where(eq(settings.key, OTP_SETTING_KEY))
+        .limit(1)
+      if (!row) return true
+      return row.value !== '0'
+    } catch {
+      return true
+    }
+  }
+
+  async setOtpRequired(required: boolean) {
+    const value = required ? '1' : '0'
+    const [row] = await this.db
+      .select({ key: settings.key })
+      .from(settings)
+      .where(eq(settings.key, OTP_SETTING_KEY))
+      .limit(1)
+    if (row) {
+      await this.db
+        .update(settings)
+        .set({ value, updatedAt: new Date() })
+        .where(eq(settings.key, OTP_SETTING_KEY))
+    } else {
+      await this.db.insert(settings).values({ key: OTP_SETTING_KEY, value })
+    }
+    return { required }
   }
 
   generateTotp(secret: string) {
