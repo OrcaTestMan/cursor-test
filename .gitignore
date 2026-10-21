@@ -28,3 +28,9 @@ apps/api/uploads/
 
 apps/api/logs/
 *.log
+
+# Old server helpers (replaced by deploy-safe)
+scripts/server/git-auto-pull.ps1
+scripts/server/restart-apps.ps1
+scripts/server/run-review.cmd
+
