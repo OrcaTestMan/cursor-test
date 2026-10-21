@@ -1,69 +1,69 @@
-﻿# ?쒕쾭 ?댁쁺 硫붾え (211.110.16.130)
+# 서버 운영 메모 (211.110.16.130)
 
-Windows ?쒕쾭?먯꽌 Nest API쨌Docker Postgres瑜??곸떆 ?댁쁺?????곕뒗 ?먭?쨌蹂듦뎄 ?덉감??  
-鍮꾨?踰덊샇쨌`.env` ?댁슜? ??臾몄꽌???곸? ?딅뒗??
+Windows 서버에서 Nest API·Docker Postgres를 상시 운영할 때 쓰는 점검·복구 절차다.  
+비밀번호·`.env` 내용은 이 문서에 적지 않는다.
 
-## 援ъ꽦 ?붿빟
+## 구성 요약
 
-| 援ъ꽦 | 媛?|
+| 구성 | 값 |
 | --- | --- |
-| API ?쒕퉬??| Windows ?쒕퉬??`nex-api` (NSSM), ?쒖옉 ?좏삎 ?먮룞 |
-| API ?ㅽ뻾 | `node dist/main.js`, ?묒뾽 ?대뜑 `apps/api` |
-| API 濡쒓렇 | `C:\nex\logs\nex-api.out.log`, `C:\nex\logs\nex-api.err.log` (??10MB ?뚯쟾) |
-| Postgres 而⑦뀒?대꼫 | `nex-postgres-clean` (`postgres:17.11`) |
-| Postgres ?ы듃 | `127.0.0.1:5432` 留?|
-| 而⑦뀒?대꼫 restart | `unless-stopped` |
-| ?쒗겕由?| `C:\backups\live-secrets\` (git 湲덉?) |
-| ?ш퀬 利앷굅 | `C:\backups\incident-20261021\` (蹂듭썝 湲덉?) |
+| API 서비스 | Windows 서비스 `nex-api` (NSSM), 시작 유형 자동 |
+| API 실행 | `node dist/main.js`, 작업 폴더 `apps/api` |
+| API 로그 | `C:\nex\logs\nex-api.out.log`, `C:\nex\logs\nex-api.err.log` (약 10MB 회전) |
+| Postgres 컨테이너 | `nex-postgres-clean` (`postgres:17.11`) |
+| Postgres 포트 | `127.0.0.1:5432` 만 |
+| 컨테이너 restart | `unless-stopped` |
+| 시크릿 | `C:\backups\live-secrets\` (git 금지) |
+| 사고 증거 | `C:\backups\incident-20261021\` (복원 금지) |
 
-?먮룞 諛고룷 ?묒뾽(`NexGitAutoPull`)? `scripts/deploy-safe.mjs` 瑜?1遺꾨쭏???몄텧?쒕떎.  
-?꾨줎?몄뿏??Vite) ?꾩슜 Windows ?쒕퉬?ㅻ뒗 ?녿떎. ?쒕쾭??`nex-api`(3000)留?NSSM?쇰줈 ?곸떆 ?ㅽ뻾?섎ŉ, 諛고룷 ??web쨌api ????鍮뚮뱶?섏?留??ъ떆?묒? API留??쒕떎.
+자동 배포 작업(`NexGitAutoPull`)은 `scripts/deploy-safe.mjs` 를 1분마다 호출한다.  
+프론트엔드(Vite) 전용 Windows 서비스는 없다. 서버는 `nex-api`(3000)만 NSSM으로 상시 실행하며, 배포 시 web·api 둘 다 빌드하지만 재시작은 API만 한다.
 
-## ?щ?????蹂듦뎄 ?쒖꽌
+## 재부팅 후 복구 순서
 
-1. **濡쒓렇??*  
-   RDP(3389)濡??쒕쾭??濡쒓렇?명븳?? (諛⑺솕踰쎌뿉??3389???좎?)
+1. **로그인**  
+   RDP(3389)로 서버에 로그인한다. (방화벽에서 3389는 유지)
 
-2. **Docker ?ㅽ뻾 ?뺤씤**  
-   - ?쒖뒪???몃젅?댁뿉 Docker Desktop?????덈뒗吏 蹂몃떎.  
-   - PowerShell: `docker info` 媛 ?먮윭 ?놁씠 ?묐떟?섎뒗吏 ?뺤씤?쒕떎.  
-   - ???섎㈃ Docker Desktop???섎룞 ?ㅽ뻾?????붿쭊?????뚭퉴吏 湲곕떎由곕떎.
+2. **Docker 실행 확인**  
+   - 시스템 트레이에 Docker Desktop이 떠 있는지 본다.  
+   - PowerShell: `docker info` 가 에러 없이 응답하는지 확인한다.  
+   - 안 되면 Docker Desktop을 수동 실행한 뒤 엔진이 뜰 때까지 기다린다.
 
-3. **`nex-postgres-clean` ?곹깭**  
+3. **`nex-postgres-clean` 상태**  
    ```powershell
    docker ps --filter name=nex-postgres-clean
    docker inspect nex-postgres-clean --format "Status={{.State.Status}} Health={{.State.Health.Status}} Restart={{.HostConfig.RestartPolicy.Name}}"
    ```  
-   - 湲곕?: `Up` + `healthy`, Restart=`unless-stopped`  
-   - 以묒??섏뼱 ?덉쑝硫? `docker start nex-postgres-clean`
+   - 기대: `Up` + `healthy`, Restart=`unless-stopped`  
+   - 중지되어 있으면: `docker start nex-postgres-clean`
 
-4. **`nex-api` ?곹깭**  
+4. **`nex-api` 상태**  
    ```powershell
    Get-Service nex-api
    nssm status nex-api
    ```  
-   - 湲곕?: `Running`  
-   - 以묒??섏뼱 ?덉쑝硫? `nssm start nex-api` ?먮뒗 `Start-Service nex-api`  
-   - API媛 DB蹂대떎 癒쇱? ?좎꽌 ?ㅽ뙣?덉뼱??NSSM????5珥?媛꾧꺽?쇰줈 ?ъ떆?묓븳?? Postgres healthy ?댄썑 health媛 遺숇뒗吏 ?뺤씤?쒕떎.
+   - 기대: `Running`  
+   - 중지되어 있으면: `nssm start nex-api` 또는 `Start-Service nex-api`  
+   - API가 DB보다 먼저 떠서 실패했어도 NSSM이 약 5초 간격으로 재시작한다. Postgres healthy 이후 health가 붙는지 확인한다.
 
-5. **health ?뺤씤**  
+5. **health 확인**  
    ```powershell
    Invoke-RestMethod http://127.0.0.1:3000/api/health
    ```  
-   - 湲곕?: `{ "status": "ok", "db": "up" }`
+   - 기대: `{ "status": "ok", "db": "up" }`
 
-## ?쒕퉬??愿由?紐낅졊
+## 서비스 관리 명령
 
-NSSM 寃쎈줈??winget ?ㅼ튂 ?꾩튂???덉쓣 ???덈떎. `nssm` ??PATH???덉쑝硫?洹몃?濡??대떎.
+NSSM 경로는 winget 설치 위치에 있을 수 있다. `nssm` 이 PATH에 있으면 그대로 쓴다.
 
 ```text
-?쒖옉:     nssm start nex-api
-以묒?:     nssm stop nex-api
-?ъ떆??   nssm restart nex-api
-?곹깭:     nssm status nex-api
+시작:     nssm start nex-api
+중지:     nssm stop nex-api
+재시작:   nssm restart nex-api
+상태:     nssm status nex-api
 ```
 
-?먮뒗:
+또는:
 
 ```powershell
 Start-Service nex-api
@@ -72,113 +72,113 @@ Restart-Service nex-api
 Get-Service nex-api
 ```
 
-## 濡쒓렇 ?꾩튂
+## 로그 위치
 
-- ?쒖? 異쒕젰: `C:\nex\logs\nex-api.out.log`
-- ?쒖? ?먮윭: `C:\nex\logs\nex-api.err.log`
-- ?뚯쟾: NSSM `AppRotateFiles` / `AppRotateOnline` / `AppRotateBytes=10485760`
+- 표준 출력: `C:\nex\logs\nex-api.out.log`
+- 표준 에러: `C:\nex\logs\nex-api.err.log`
+- 회전: NSSM `AppRotateFiles` / `AppRotateOnline` / `AppRotateBytes=10485760`
 
 ## Docker / compose
 
-?쒕쾭???뚯씪? `docker-compose.server.yml` ?대떎. (`name: nex-clean` 怨좎젙)  
-PC 濡쒖뺄 媛쒕컻??`docker-compose.yml` 怨??욎? ?딅뒗??
+서버용 파일은 `docker-compose.server.yml` 이다. (`name: nex-clean` 고정)  
+PC 로컬 개발용 `docker-compose.yml` 과 섞지 않는다.
 
-- ?대?吏: `postgres:17.11`
-- 而⑦뀒?대꼫: `nex-postgres-clean`
+- 이미지: `postgres:17.11`
+- 컨테이너: `nex-postgres-clean`
 - `restart: unless-stopped`
-- ?ы듃: `127.0.0.1:5432:5432`
-- env ?뚯씪: `C:/backups/live-secrets/postgres.env` (git 諛?
-- 蹂쇰ⅷ: `nex_pg_clean_20261021`
+- 포트: `127.0.0.1:5432:5432`
+- env 파일: `C:/backups/live-secrets/postgres.env` (git 밖)
+- 볼륨: `nex_pg_clean_20261021`
 
-?쒕쾭?먯꽌 compose 紐낅졊? ??긽 `-f docker-compose.server.yml` ??遺숈씤??  
-?꾨줈?앺듃 ?대쫫 `nex-clean` ? ?뚯씪??`name:` ?쇰줈 ?좎??섎?濡?湲곗〈 而⑦뀒?대꼫瑜??덈줈 留뚮뱾吏 ?딅뒗??
+서버에서 compose 명령은 항상 `-f docker-compose.server.yml` 을 붙인다.  
+프로젝트 이름 `nex-clean` 은 파일의 `name:` 으로 유지되므로 기존 컨테이너를 새로 만들지 않는다.
 
 ```powershell
-cd <??μ냼猷⑦듃>
+cd <저장소루트>
 docker compose -f docker-compose.server.yml ps
 docker compose -f docker-compose.server.yml up -d --wait
 ```
 
-## ?섎룎由ш린
+## 되돌리기
 
-### nex-api ?쒕퉬???쒓굅
+### nex-api 서비스 제거
 
 ```text
 nssm stop nex-api
 nssm remove nex-api confirm
 ```
 
-?꾩슂?섎㈃ ?댄썑 ?섎룞?쇰줈 `yarn workspace api start:prod` 瑜??대떎.
+필요하면 이후 수동으로 `yarn workspace api start:prod` 를 쓴다.
 
-### 而⑦뀒?대꼫 restart ?뺤콉 ?섎룎由ш린
+### 컨테이너 restart 정책 되돌리기
 
 ```powershell
 docker update --restart=no nex-postgres-clean
 ```
 
-`docker-compose.server.yml` ??`restart: unless-stopped` 以꾨룄 ?쒓굅?섍굅??`no` 濡?諛붽씔??
+`docker-compose.server.yml` 의 `restart: unless-stopped` 줄도 제거하거나 `no` 로 바꾼다.
 
-### Docker ?먮룞 ?쒖옉 ?섎룎由ш린
+### Docker 자동 시작 되돌리기
 
-- Docker Desktop ?ㅼ젙?먯꽌 Start Docker Desktop when you log in ?댁젣, ?먮뒗  
-  `%APPDATA%\Docker\settings-store.json` ??`AutoStart` 瑜?`false`
+- Docker Desktop 설정에서 Start Docker Desktop when you log in 해제, 또는  
+  `%APPDATA%\Docker\settings-store.json` 의 `AutoStart` 를 `false`
 - `Set-Service com.docker.service -StartupType Manual`
 
-### Windows Update ?먮룞 ?щ???諛⑹? ?섎룎由ш린
+### Windows Update 자동 재부팅 방지 되돌리기
 
-愿由ъ옄 PowerShell:
+관리자 PowerShell:
 
 ```powershell
 Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name NoAutoRebootWithLoggedOnUsers -ErrorAction SilentlyContinue
 Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name AUOptions -ErrorAction SilentlyContinue
-# ?쒖꽦 ?쒓컙? ?ㅼ젙 ??> Windows Update > ?쒖꽦 ?쒓컙?먯꽌 ?섎룞 議곗젙
+# 활성 시간은 설정 앱 > Windows Update > 활성 시간에서 수동 조정
 ```
 
-## 肄붾뱶 諛섏쁺
+## 코드 반영
 
-?쒕쾭 ?묒뾽 ?대뜑???됱냼 `main` ???좎??쒕떎.  
-`.env`, `C:\backups\` ?쒗겕由온룹쬆嫄곕뒗 ?덈? 而ㅻ컠?섏? ?딅뒗??
+서버 작업 폴더는 평소 `main` 을 유지한다.  
+`.env`, `C:\backups\` 시크릿·증거는 절대 커밋하지 않는다.
 
-## ?먮룞 諛고룷 (NexGitAutoPull)
+## 자동 배포 (NexGitAutoPull)
 
-### ?숈옉
+### 동작
 
-- ?묒뾽: `\NexGitAutoPull` ??`scripts/server/run-auto-deploy.ps1` ??`scripts/deploy-safe.mjs`
-- ???釉뚮옖移? 湲곕낯 `main` (`DEPLOY_BRANCH` 濡?蹂寃?媛??
-- 留??ㅽ뻾: ?좉툑 ??`git fetch` ????而ㅻ컠 ?놁쑝硫?醫낅즺 ??dirty硫?嫄곕? ???댁쟾 ?ㅽ뙣 而ㅻ컠怨?媛숈쑝硫??ㅽ궢  
-  ??`apps/api/drizzle/` **?좉퇋 異붽?** ?뚯씪???덉쑝硫?**諛고룷 ????* (?섎룞 ?뱀씤 ?꾩슂)  
-  ??`git pull --ff-only` ??`yarn install --immutable` ??web/api 鍮뚮뱶 ??API ?⑥쐞 ?뚯뒪?? 
-  ???깃났 ??`nssm restart nex-api` ??`/api/health` 理쒕? 60珥??ъ떆?? 
-  ??鍮뚮뱶 ?ㅽ뙣: ?댁쟾 而ㅻ컠?쇰줈 ?섎룎由ш퀬 ?щ퉴?? **API ?ъ떆???놁쓬**  
-  ??health ?ㅽ뙣: 濡ㅻ갚 ???щ퉴?쑣텮PI ?ъ떆?뫢톒ealth ?뺤씤
-- ?댁쁺 DB??遺숇뒗 e2e/?ㅽ겕由쏀듃 ?뚯뒪?몃뒗 ?ㅽ뻾?섏? ?딅뒗??
-- ?묒뾽 ?ㅼ젙: 1遺?媛꾧꺽, `MultipleInstances=IgnoreNew`, ?ㅽ겕由쏀듃 ?좉툑 蹂묓뻾. RunLevel Highest(nssm??.
+- 작업: `\NexGitAutoPull` → `scripts/server/run-auto-deploy.ps1` → `scripts/deploy-safe.mjs`
+- 대상 브랜치: 기본 `main` (`DEPLOY_BRANCH` 로 변경 가능)
+- 매 실행: 잠금 → `git fetch` → 새 커밋 없으면 종료 → dirty면 거부 → 이전 실패 커밋과 같으면 스킵  
+  → `apps/api/drizzle/` **신규 추가** 파일이 있으면 **배포 안 함** (수동 승인 필요)  
+  → `git pull --ff-only` → `yarn install --immutable` → web/api 빌드 → API 단위 테스트  
+  → 성공 시 `nssm restart nex-api` → `/api/health` 최대 60초 재시도  
+  → 빌드 실패: 이전 커밋으로 되돌리고 재빌드, **API 재시작 없음**  
+  → health 실패: 롤백 후 재빌드·API 재시작·health 확인
+- 운영 DB에 붙는 e2e/스크립트 테스트는 실행하지 않는다.
+- 작업 설정: 1분 간격, `MultipleInstances=IgnoreNew`, 스크립트 잠금 병행. RunLevel Highest(nssm용).
 
-### 濡쒓렇
+### 로그
 
 ```powershell
 Get-Content C:\nex\logs\deploy.log -Tail 50
 ```
 
-??以?JSON: `ts`, `branch`, `result`(`deployed`/`failed`/`rollback`/`skipped`), `from`/`to`, `reason`.  
-?ㅽ뙣쨌濡ㅻ갚쨌留덉씠洹몃젅?댁뀡 ?湲곕뒗 `sendNotify` 濡쒕룄 ?④릿???꾩옱 濡쒓렇, ?붾젅洹몃옩? ?좏겙 ?덉쓣 ?뚮쭔).
+한 줄 JSON: `ts`, `branch`, `result`(`deployed`/`failed`/`rollback`/`skipped`), `from`/`to`, `reason`.  
+실패·롤백·마이그레이션 대기는 `sendNotify` 로도 남긴다(현재 로그, 텔레그램은 토큰 있을 때만).
 
-### ?섎룞 諛고룷
+### 수동 배포
 
 ```powershell
-cd <??μ냼猷⑦듃>
+cd <저장소루트>
 $env:DEPLOY_BRANCH = 'main'
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\server\run-auto-deploy.ps1
 ```
 
-愿由ъ옄 沅뚰븳???덉뼱??`nssm restart` 媛 ?쒕떎. ?ㅼ?以??묒뾽? Highest 濡??깅줉???덈떎.
+관리자 권한이 있어야 `nssm restart` 가 된다. 스케줄 작업은 Highest 로 등록돼 있다.
 
-### ?섎룞 濡ㅻ갚
+### 수동 롤백
 
 ```powershell
-cd <??μ냼猷⑦듃>
+cd <저장소루트>
 git fetch origin
-git checkout --force <?댁쟾而ㅻ컠SHA>
+git checkout --force <이전커밋SHA>
 yarn install --immutable
 yarn workspace web build
 yarn workspace api build
@@ -186,11 +186,10 @@ nssm restart nex-api
 Invoke-RestMethod http://127.0.0.1:3000/api/health
 ```
 
-### ?먮룞 諛고룷 ?꾧린 / 耳쒓린
+### 자동 배포 끄기 / 켜기
 
 ```powershell
 Disable-ScheduledTask -TaskName NexGitAutoPull
 Enable-ScheduledTask -TaskName NexGitAutoPull
 Get-ScheduledTask -TaskName NexGitAutoPull | Select-Object TaskName,State
 ```
-
