@@ -1,0 +1,31 @@
+name: nex-clean
+
+services:
+  postgres:
+    image: postgres:17.11
+    container_name: nex-postgres-clean
+    restart: unless-stopped
+    env_file:
+      - C:/backups/live-secrets/postgres.env
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - nex_pg_clean_20261021:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - logging_collector=on
+      - -c
+      - log_connections=on
+      - -c
+      - log_directory=log
+      - -c
+      - log_filename=postgresql-%Y-%m-%d_%H%M%S.log
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nex_sys -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  nex_pg_clean_20261021:

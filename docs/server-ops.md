@@ -1,0 +1,140 @@
+# 서버 운영 메모 (211.110.16.130)
+
+Windows 서버에서 Nest API·Docker Postgres를 상시 운영할 때 쓰는 점검·복구 절차다.  
+비밀번호·`.env` 내용은 이 문서에 적지 않는다.
+
+## 구성 요약
+
+| 구성 | 값 |
+| --- | --- |
+| API 서비스 | Windows 서비스 `nex-api` (NSSM), 시작 유형 자동 |
+| API 실행 | `node dist/main.js`, 작업 폴더 `apps/api` |
+| API 로그 | `C:\nex\logs\nex-api.out.log`, `C:\nex\logs\nex-api.err.log` (약 10MB 회전) |
+| Postgres 컨테이너 | `nex-postgres-clean` (`postgres:17.11`) |
+| Postgres 포트 | `127.0.0.1:5432` 만 |
+| 컨테이너 restart | `unless-stopped` |
+| 시크릿 | `C:\backups\live-secrets\` (git 금지) |
+| 사고 증거 | `C:\backups\incident-20261021\` (복원 금지) |
+
+자동 git pull 작업(`NexGitAutoPull`)은 Disabled 로 둔다. 코드 반영은 수동 pull 한다.
+
+## 재부팅 후 복구 순서
+
+1. **로그인**  
+   RDP(3389)로 서버에 로그인한다. (방화벽에서 3389는 유지)
+
+2. **Docker 실행 확인**  
+   - 시스템 트레이에 Docker Desktop이 떠 있는지 본다.  
+   - PowerShell: `docker info` 가 에러 없이 응답하는지 확인한다.  
+   - 안 되면 Docker Desktop을 수동 실행한 뒤 엔진이 뜰 때까지 기다린다.
+
+3. **`nex-postgres-clean` 상태**  
+   ```powershell
+   docker ps --filter name=nex-postgres-clean
+   docker inspect nex-postgres-clean --format "Status={{.State.Status}} Health={{.State.Health.Status}} Restart={{.HostConfig.RestartPolicy.Name}}"
+   ```  
+   - 기대: `Up` + `healthy`, Restart=`unless-stopped`  
+   - 중지되어 있으면: `docker start nex-postgres-clean`
+
+4. **`nex-api` 상태**  
+   ```powershell
+   Get-Service nex-api
+   nssm status nex-api
+   ```  
+   - 기대: `Running`  
+   - 중지되어 있으면: `nssm start nex-api` 또는 `Start-Service nex-api`  
+   - API가 DB보다 먼저 떠서 실패했어도 NSSM이 약 5초 간격으로 재시작한다. Postgres healthy 이후 health가 붙는지 확인한다.
+
+5. **health 확인**  
+   ```powershell
+   Invoke-RestMethod http://127.0.0.1:3000/api/health
+   ```  
+   - 기대: `{ "status": "ok", "db": "up" }`
+
+## 서비스 관리 명령
+
+NSSM 경로는 winget 설치 위치에 있을 수 있다. `nssm` 이 PATH에 있으면 그대로 쓴다.
+
+```text
+시작:     nssm start nex-api
+중지:     nssm stop nex-api
+재시작:   nssm restart nex-api
+상태:     nssm status nex-api
+```
+
+또는:
+
+```powershell
+Start-Service nex-api
+Stop-Service nex-api
+Restart-Service nex-api
+Get-Service nex-api
+```
+
+## 로그 위치
+
+- 표준 출력: `C:\nex\logs\nex-api.out.log`
+- 표준 에러: `C:\nex\logs\nex-api.err.log`
+- 회전: NSSM `AppRotateFiles` / `AppRotateOnline` / `AppRotateBytes=10485760`
+
+## Docker / compose
+
+서버용 파일은 `docker-compose.server.yml` 이다. (`name: nex-clean` 고정)  
+PC 로컬 개발용 `docker-compose.yml` 과 섞지 않는다.
+
+- 이미지: `postgres:17.11`
+- 컨테이너: `nex-postgres-clean`
+- `restart: unless-stopped`
+- 포트: `127.0.0.1:5432:5432`
+- env 파일: `C:/backups/live-secrets/postgres.env` (git 밖)
+- 볼륨: `nex_pg_clean_20261021`
+
+서버에서 compose 명령은 항상 `-f docker-compose.server.yml` 을 붙인다.  
+프로젝트 이름 `nex-clean` 은 파일의 `name:` 으로 유지되므로 기존 컨테이너를 새로 만들지 않는다.
+
+```powershell
+cd <저장소루트>
+docker compose -f docker-compose.server.yml ps
+docker compose -f docker-compose.server.yml up -d --wait
+```
+
+## 되돌리기
+
+### nex-api 서비스 제거
+
+```text
+nssm stop nex-api
+nssm remove nex-api confirm
+```
+
+필요하면 이후 수동으로 `yarn workspace api start:prod` 를 쓴다.
+
+### 컨테이너 restart 정책 되돌리기
+
+```powershell
+docker update --restart=no nex-postgres-clean
+```
+
+`docker-compose.server.yml` 의 `restart: unless-stopped` 줄도 제거하거나 `no` 로 바꾼다.
+
+### Docker 자동 시작 되돌리기
+
+- Docker Desktop 설정에서 Start Docker Desktop when you log in 해제, 또는  
+  `%APPDATA%\Docker\settings-store.json` 의 `AutoStart` 를 `false`
+- `Set-Service com.docker.service -StartupType Manual`
+
+### Windows Update 자동 재부팅 방지 되돌리기
+
+관리자 PowerShell:
+
+```powershell
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name NoAutoRebootWithLoggedOnUsers -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name AUOptions -ErrorAction SilentlyContinue
+# 활성 시간은 설정 앱 > Windows Update > 활성 시간에서 수동 조정
+```
+
+## 코드 반영
+
+서버 작업 폴더는 평소 `main` 을 유지하고, 서버 전용 파일은 `server-ops` 브랜치로 올린다.  
+서버 코드 갱신은 `NexGitAutoPull` 이 꺼진 상태에서 수동 `git pull` 한다.  
+`.env`, `C:\backups\` 시크릿·증거는 절대 커밋하지 않는다.
