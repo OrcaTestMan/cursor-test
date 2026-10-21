@@ -16,7 +16,7 @@ const sql = postgres(url, { max: 1 })
 const full = process.env.PERF_FULL === '1'
 const usersN = full ? 10_000 : 500
 const betsN = full ? 1_000_000 : 5_000
-const movesExtra = full ? 2_000_000 : 10_000
+const movesExtra = full ? 3_000_000 : 10_000
 
 const t0 = Date.now()
 const [u0] = await sql`select id from nex_users order by id limit 1`

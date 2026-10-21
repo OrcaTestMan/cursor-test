@@ -1,0 +1,432 @@
+﻿{
+  "connection": [
+    {
+      "db": "app",
+      "db_user": "app",
+      "addr": "172.18.0.2/32",
+      "port": 5432,
+      "version": "17.11 (Debian 17.11-1.pgdg13+2)"
+    }
+  ],
+  "tables": [
+    {
+      "tablename": "nex_activity_logs"
+    },
+    {
+      "tablename": "nex_banners"
+    },
+    {
+      "tablename": "nex_bet_settlement_events"
+    },
+    {
+      "tablename": "nex_bets"
+    },
+    {
+      "tablename": "nex_cash_requests"
+    },
+    {
+      "tablename": "nex_casino_bets"
+    },
+    {
+      "tablename": "nex_dist_accruals"
+    },
+    {
+      "tablename": "nex_dist_agents"
+    },
+    {
+      "tablename": "nex_dist_payouts"
+    },
+    {
+      "tablename": "nex_idempotency_keys"
+    },
+    {
+      "tablename": "nex_inquiries"
+    },
+    {
+      "tablename": "nex_money_moves"
+    },
+    {
+      "tablename": "nex_point_moves"
+    },
+    {
+      "tablename": "nex_review_flags"
+    },
+    {
+      "tablename": "nex_settings"
+    },
+    {
+      "tablename": "nex_users"
+    },
+    {
+      "tablename": "nex_wallet_settings"
+    }
+  ],
+  "nightishTables": [
+    {
+      "bet_settlement_events": "nex_bet_settlement_events",
+      "matches": null,
+      "markets": null,
+      "outcomes": null,
+      "bet_legs": null,
+      "risk_exposure": null,
+      "risk_settings": null,
+      "risk_alerts": null,
+      "audit_logs": null,
+      "idempotency_keys": "nex_idempotency_keys"
+    }
+  ],
+  "userColumns": [
+    {
+      "column_name": "id",
+      "data_type": "integer",
+      "column_default": "nextval('nex_users_id_seq'::regclass)"
+    },
+    {
+      "column_name": "login",
+      "data_type": "character varying",
+      "column_default": null
+    },
+    {
+      "column_name": "nick",
+      "data_type": "character varying",
+      "column_default": null
+    },
+    {
+      "column_name": "password_hash",
+      "data_type": "text",
+      "column_default": "''::text"
+    },
+    {
+      "column_name": "role",
+      "data_type": "USER-DEFINED",
+      "column_default": "'member'::nex_user_role"
+    },
+    {
+      "column_name": "status",
+      "data_type": "USER-DEFINED",
+      "column_default": "'active'::nex_user_status"
+    },
+    {
+      "column_name": "block_reason",
+      "data_type": "character varying",
+      "column_default": "''::character varying"
+    },
+    {
+      "column_name": "money",
+      "data_type": "bigint",
+      "column_default": "0"
+    },
+    {
+      "column_name": "points",
+      "data_type": "bigint",
+      "column_default": "0"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "column_default": "now()"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "column_default": "now()"
+    }
+  ],
+  "betColumns": [
+    {
+      "column_name": "settlement_revision",
+      "data_type": "integer",
+      "column_default": "0"
+    }
+  ],
+  "constraints": [
+    {
+      "conname": "nex_bet_settlement_events_bet_id_nex_bets_id_fk",
+      "contype": "f",
+      "def": "FOREIGN KEY (bet_id) REFERENCES nex_bets(id) ON DELETE CASCADE"
+    },
+    {
+      "conname": "nex_bet_settlement_events_pkey",
+      "contype": "p",
+      "def": "PRIMARY KEY (id)"
+    },
+    {
+      "conname": "nex_money_moves_pkey",
+      "contype": "p",
+      "def": "PRIMARY KEY (id)"
+    },
+    {
+      "conname": "nex_money_moves_user_id_nex_users_id_fk",
+      "contype": "f",
+      "def": "FOREIGN KEY (user_id) REFERENCES nex_users(id) ON DELETE CASCADE"
+    },
+    {
+      "conname": "nex_users_money_nonneg",
+      "contype": "c",
+      "def": "CHECK ((money >= 0))"
+    },
+    {
+      "conname": "nex_users_pkey",
+      "contype": "p",
+      "def": "PRIMARY KEY (id)"
+    }
+  ],
+  "indexesExtra": [
+    {
+      "indexname": "nex_bet_settle_bet_idx",
+      "indexdef": "CREATE INDEX nex_bet_settle_bet_idx ON public.nex_bet_settlement_events USING btree (bet_id)"
+    },
+    {
+      "indexname": "nex_bet_settle_bet_rev_uidx",
+      "indexdef": "CREATE UNIQUE INDEX nex_bet_settle_bet_rev_uidx ON public.nex_bet_settlement_events USING btree (bet_id, revision)"
+    },
+    {
+      "indexname": "nex_cash_idempotency_uidx",
+      "indexdef": "CREATE UNIQUE INDEX nex_cash_idempotency_uidx ON public.nex_cash_requests USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)"
+    },
+    {
+      "indexname": "nex_money_moves_ref_uidx",
+      "indexdef": "CREATE UNIQUE INDEX nex_money_moves_ref_uidx ON public.nex_money_moves USING btree (ref_type, ref_id) WHERE ((ref_id IS NOT NULL) AND ((ref_type)::text <> ''::text))"
+    }
+  ],
+  "drizzleMigrations": [
+    {
+      "id": 1,
+      "hash": "0d1d95261dbd7b69b37949873651a57022f88780007735fbb12d8f08b7d19128",
+      "created_at": "1792242576122"
+    },
+    {
+      "id": 2,
+      "hash": "ec39d83001abec0f85f6b22040e1c8e9fd3f85f1c4aa21e8370c3d3c3a142665",
+      "created_at": "1792244254478"
+    },
+    {
+      "id": 3,
+      "hash": "d7ce0394f190543482d9196b3f8a4e775281cc606472d8a453b6311040aa9eab",
+      "created_at": "1792247332425"
+    },
+    {
+      "id": 4,
+      "hash": "970c85d447b49f615e9cca8df156be9b3d5f50f47093d4e726a5ce770a9a5b00",
+      "created_at": "1792248169011"
+    },
+    {
+      "id": 5,
+      "hash": "0faee8b4d301c14b18f8178804c1879eae5d397b9f3e6f6a3d455ca476ebf47e",
+      "created_at": "1792248593579"
+    },
+    {
+      "id": 6,
+      "hash": "6c259e7031000fb1f25fb7b73f706b785e43f04954805f4409119485da0cb195",
+      "created_at": "1792248674280"
+    },
+    {
+      "id": 7,
+      "hash": "3479d14a04c953609b038e0fc1c4cb68c2ea8bf6059231e6de14b97fcc68bf5b",
+      "created_at": "1792249048379"
+    },
+    {
+      "id": 8,
+      "hash": "8220be174c47ccc986cd70d77fced02c8d3f853780c6edc401c6e01b1d0a2889",
+      "created_at": "1792249415785"
+    },
+    {
+      "id": 9,
+      "hash": "1ba03fd8dde0d63885fd5644eecb95aef8904be8fa04ff631d88bd9f3be10ce3",
+      "created_at": "1792260000000"
+    },
+    {
+      "id": 10,
+      "hash": "56fa0bca0c13d002410da07398e1a102a192a604ceb359aa25ac44eea51cecdc",
+      "created_at": "1792494112307"
+    },
+    {
+      "id": 11,
+      "hash": "7020b4832c3b4985bde6759a35d5f78d6aa383808109301467624f37bd7d0340",
+      "created_at": "1792515468374"
+    },
+    {
+      "id": 12,
+      "hash": "b25b94626ca3d465b566f9bd81ab21755e0c01b5a589462914ed2d4dd4286762",
+      "created_at": "1792560000000"
+    },
+    {
+      "id": 13,
+      "hash": "f3111fc8b0d105ae3efa89e2a4217771b75ab8086a711ff48981499eb351dfad",
+      "created_at": "1792600000000"
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "login": "admin",
+      "nick": "관리자",
+      "money": "0",
+      "status": "active",
+      "created_at": "2026-10-20T11:07:55.854Z"
+    },
+    {
+      "id": 2,
+      "login": "test",
+      "nick": "테스트유저 (t)",
+      "money": "62924",
+      "status": "active",
+      "created_at": "2026-10-20T11:07:55.888Z"
+    },
+    {
+      "id": 3,
+      "login": "test123",
+      "nick": "테스트용 (t)",
+      "money": "10000",
+      "status": "active",
+      "created_at": "2026-10-20T11:07:55.888Z"
+    },
+    {
+      "id": 4,
+      "login": "user03",
+      "nick": "회원03 (t)",
+      "money": "18500",
+      "status": "active",
+      "created_at": "2026-10-20T11:07:55.888Z"
+    },
+    {
+      "id": 5,
+      "login": "user04",
+      "nick": "회원04 (t)",
+      "money": "12400",
+      "status": "blocked",
+      "created_at": "2026-10-20T11:07:55.888Z"
+    },
+    {
+      "id": 6,
+      "login": "user05",
+      "nick": "회원05 (t)",
+      "money": "8600",
+      "status": "active",
+      "created_at": "2026-10-20T11:07:55.888Z"
+    },
+    {
+      "id": 7,
+      "login": "night_probe_wd",
+      "nick": "night_probe_wd",
+      "money": "0",
+      "status": "active",
+      "created_at": "2026-10-20T17:48:13.681Z"
+    },
+    {
+      "id": 8,
+      "login": "night_probe_bet",
+      "nick": "night_probe_bet",
+      "money": "9000",
+      "status": "active",
+      "created_at": "2026-10-20T17:48:28.986Z"
+    }
+  ],
+  "probeUsers": [
+    {
+      "id": 8,
+      "login": "night_probe_bet",
+      "money": "9000",
+      "created_at": "2026-10-20T17:48:28.986Z"
+    },
+    {
+      "id": 7,
+      "login": "night_probe_wd",
+      "money": "0",
+      "created_at": "2026-10-20T17:48:13.681Z"
+    }
+  ],
+  "probeCounts": [
+    {
+      "money_moves": 13,
+      "cash": 10,
+      "bets": 1,
+      "casino": 0
+    }
+  ],
+  "seedSix": [
+    {
+      "login": "admin",
+      "money": "0",
+      "status": "active",
+      "nick": "관리자"
+    },
+    {
+      "login": "test",
+      "money": "62924",
+      "status": "active",
+      "nick": "테스트유저 (t)"
+    },
+    {
+      "login": "test123",
+      "money": "10000",
+      "status": "active",
+      "nick": "테스트용 (t)"
+    },
+    {
+      "login": "user03",
+      "money": "18500",
+      "status": "active",
+      "nick": "회원03 (t)"
+    },
+    {
+      "login": "user04",
+      "money": "12400",
+      "status": "blocked",
+      "nick": "회원04 (t)"
+    },
+    {
+      "login": "user05",
+      "money": "8600",
+      "status": "active",
+      "nick": "회원05 (t)"
+    }
+  ],
+  "counts": [
+    {
+      "users": 8,
+      "money_moves": 70,
+      "cash": 63,
+      "bets": 4,
+      "settle_events": 0
+    }
+  ],
+  "seedLedger": [
+    {
+      "login": "admin",
+      "wallet": "0",
+      "ledger_sum": "0",
+      "move_count": 0
+    },
+    {
+      "login": "test",
+      "wallet": "62924",
+      "ledger_sum": "62924",
+      "move_count": 53
+    },
+    {
+      "login": "test123",
+      "wallet": "10000",
+      "ledger_sum": "10000",
+      "move_count": 1
+    },
+    {
+      "login": "user03",
+      "wallet": "18500",
+      "ledger_sum": "18500",
+      "move_count": 1
+    },
+    {
+      "login": "user04",
+      "wallet": "12400",
+      "ledger_sum": "12400",
+      "move_count": 1
+    },
+    {
+      "login": "user05",
+      "wallet": "8600",
+      "ledger_sum": "8600",
+      "move_count": 1
+    }
+  ]
+}

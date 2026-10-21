@@ -2089,6 +2089,8 @@ const HOT_PAD_ROWS = [
 ]
 
 function padHotRows(rows, limit = 5) {
+  // API 모드에서는 데모 패딩 금지
+  if (window.__riskApi) return rows.slice(0, limit)
   const list = [...rows]
   const used = new Set(list.map((row) => row.match))
   for (const sample of HOT_PAD_ROWS) {
@@ -2373,22 +2375,100 @@ function casinoKindOf(bet) {
   return 'other'
 }
 
+function paintRiskFromApi() {
+  const api = window.__riskApi
+  if (!api || !location.pathname.endsWith('/risk.html')) return
+  ensureRiskSummaryCards()
+  reshapeRisk()
+  const board = document.querySelector('[data-risk-board="watch8"]')
+  if (api.summary) {
+    setLabel('미확정 리스크 금액', num(api.summary.maxRisk || 0))
+    setLabel(
+      '진행 중인 라이브 경기 수',
+      countText((api.matches || []).filter((m) => m.live).length, '건'),
+    )
+  }
+  const lines = (api.matches || []).map((m) => {
+    const parts = String(m.name || '').split(/\s+vs\s+/i)
+    return {
+      league: m.league || '',
+      sport: m.sport || '',
+      home: (parts[0] || m.name || '').trim(),
+      away: (parts[1] || '-').trim(),
+      match: m.name || '',
+      market: '승패',
+      when: m.live ? '실시간' : '일반',
+      count: Number(m.betCount || m.count || 0) || 1,
+      stake: Number(m.stake || 0),
+      risk: Number(m.maxLoss || m.risk || 0),
+    }
+  })
+  if (board) {
+    bindRiskWatchFilters(board)
+    paintRiskWatchFilters(board)
+    const sports = riskParsePicks(board.dataset.riskSport)
+    const markets = riskParsePicks(board.dataset.riskMarket)
+    const whens = riskParsePicks(board.dataset.riskWhen)
+    const q = (board.dataset.riskQ || '').toLowerCase()
+    const sort = board.dataset.riskSort || 'risk'
+    let filtered = lines.slice()
+    if (sports.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.sport, sports, 'sport'))
+    if (markets.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.market, markets, 'market'))
+    if (whens.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.when, whens, 'when'))
+    if (q) {
+      filtered = filtered.filter((row) =>
+        [row.league, row.sport, row.home, row.away, row.match, row.market, row.when]
+          .join(' ')
+          .toLowerCase()
+          .includes(q))
+    }
+    filtered.sort((a, b) => {
+      if (sort === 'stake') return b.stake - a.stake || b.risk - a.risk
+      if (sort === 'count') return b.count - a.count || b.risk - a.risk
+      return b.risk - a.risk || b.stake - a.stake
+    })
+    paintRiskWatchTable(board, filtered)
+  }
+  const memberSection = [...document.querySelectorAll('main h2')]
+    .find((item) => item.textContent.includes('회원별 리스크'))
+    ?.closest('section')
+  if (memberSection && Array.isArray(api.members)) {
+    const linesMembers = api.members.map((u) => [
+      `${u.nick || u.login}(${u.login})`,
+      '0건',
+      riskMoney(0),
+      riskMoney(0),
+      riskMoney(u.money || 0),
+      '0건',
+      riskMoney(0),
+      riskMoney(0),
+      riskMoney(u.money || 0),
+    ])
+    fillRiskMemberTable(memberSection, linesMembers)
+  }
+  const refreshed = [...document.querySelectorAll('main span')].find((node) =>
+    /^갱신\s/.test(node.textContent.trim()),
+  )
+  if (refreshed) refreshed.textContent = `갱신 ${stamp()} · API`
+}
+
 async function hydrateRiskFromApi() {
   if (!location.pathname.endsWith('/risk.html')) return
   try {
-    const [summary, matches] = await Promise.all([
+    const [summary, matches, members, alerts] = await Promise.all([
       fetch('/api/risk/summary').then((r) => r.json()),
-      fetch('/api/risk/matches?limit=20').then((r) => r.json()),
+      fetch('/api/risk/matches?limit=50').then((r) => r.json()),
+      fetch('/api/risk/members?limit=50').then((r) => r.json()),
+      fetch('/api/risk/alerts').then((r) => r.json()),
     ])
-    const riskEl = document.querySelector('[data-risk-summary] .text-danger')
-    if (riskEl && summary?.maxRisk != null) {
-      riskEl.textContent = Number(summary.maxRisk).toLocaleString('ko-KR')
+    window.__riskApi = {
+      summary,
+      matches: matches.items || [],
+      members: members.items || [],
+      alerts: Array.isArray(alerts) ? alerts : [],
+      fetchedAt: Date.now(),
     }
-    const liveEl = document.querySelector('[data-risk-summary] .text-lg.text-fg')
-    if (liveEl && Array.isArray(matches?.items)) {
-      liveEl.textContent = String(matches.items.filter((m) => m.live).length)
-    }
-    // SSE: 3초마다 힌트 수신 → 카드 갱신
+    paintRiskFromApi()
     if (!window.__riskSse) {
       window.__riskSse = new EventSource('/api/risk/stream')
       window.__riskSse.onmessage = () => {
@@ -3083,6 +3163,10 @@ function paintRiskWatchFilters(board) {
 
 function paintRiskMonitor(data = store()) {
   if (!location.pathname.endsWith('/risk.html')) return
+  if (window.__riskApi) {
+    paintRiskFromApi()
+    return
+  }
   reshapeRisk()
   const board = document.querySelector('[data-risk-board="watch8"]')
   if (!board) return
