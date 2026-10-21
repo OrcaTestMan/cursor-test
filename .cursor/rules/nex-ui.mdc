@@ -19,7 +19,8 @@ alwaysApply: false
 
 - 화면마다 `text-align`, `justify-content`, 칸 너비, `1fr` 늘리기를 덧씌우지 않는다.
 - 새 칸 종류가 필요하면 `nex-table.css`에 추가하고 견본 페이지에도 추가한다.
-- 표를 만들거나 고친 뒤에는 스크린샷을 보고에 첨부한다.
+- 표를 만들거나 고친 뒤에는 `yarn check:nex-screens`를 통과하고, 실제 스크린샷을 보고에 첨부한다.
+- 코드 안 CSS(`boardLayout`, `settleAlignStyle`)는 `yarn check:nex-css`로 괄호·파서를 확인한다.
 
 ## 칸 종류
 

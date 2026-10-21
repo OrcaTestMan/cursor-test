@@ -15,6 +15,11 @@
     "start": "node --env-file=apps/api/.env apps/api/dist/main.js",
     "deploy:mark": "node scripts/mark-manual-deploy.mjs",
     "check:nex-table": "node scripts/check-nex-table.mjs",
+    "check:nex-css": "node scripts/check-nex-css.mjs",
+    "check:nex-screens": "node scripts/compare-nex-screens.mjs",
     "check:work-log": "node scripts/check-work-log.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
   }
 }
