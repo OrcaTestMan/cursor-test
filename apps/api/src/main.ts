@@ -17,7 +17,6 @@ async function bootstrap() {
   if (webDir) {
     new Logger('Web').log(`화면 파일을 함께 제공합니다: ${webDir}`);
   }
-  app.enableCors({ origin: process.env.WEB_ORIGIN, credentials: true });
   app.enableShutdownHooks();
   await app.listen(process.env.PORT ?? 3000);
 }

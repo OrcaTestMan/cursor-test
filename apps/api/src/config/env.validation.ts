@@ -13,13 +13,24 @@ export function validateEnv(
   if (!readString(config, 'DATABASE_URL')) {
     problems.push('DATABASE_URL이 설정되지 않았습니다.');
   }
-  if (
-    readString(config, 'NODE_ENV') === 'production' &&
-    readString(config, 'ADMIN_PASSWORD').length < MIN_ADMIN_PASSWORD_LENGTH
-  ) {
-    problems.push(
-      `운영 환경(NODE_ENV=production)에서는 ADMIN_PASSWORD를 ${MIN_ADMIN_PASSWORD_LENGTH}자 이상으로 설정해야 합니다.`,
-    );
+  if (readString(config, 'NODE_ENV') === 'production') {
+    if (
+      readString(config, 'ADMIN_PASSWORD').length < MIN_ADMIN_PASSWORD_LENGTH
+    ) {
+      problems.push(
+        `운영 환경(NODE_ENV=production)에서는 ADMIN_PASSWORD를 ${MIN_ADMIN_PASSWORD_LENGTH}자 이상으로 설정해야 합니다.`,
+      );
+    }
+    if (!readString(config, 'TEMP_BASIC_AUTH_USER')) {
+      problems.push(
+        '운영 환경(NODE_ENV=production)에서는 TEMP_BASIC_AUTH_USER를 설정해야 합니다.',
+      );
+    }
+    if (!readString(config, 'TEMP_BASIC_AUTH_PASS')) {
+      problems.push(
+        '운영 환경(NODE_ENV=production)에서는 TEMP_BASIC_AUTH_PASS를 설정해야 합니다.',
+      );
+    }
   }
   if (problems.length > 0) {
     throw new Error(

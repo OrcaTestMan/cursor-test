@@ -2,6 +2,7 @@ import { type INestApplication, ValidationPipe } from '@nestjs/common'
 import cookieParser from 'cookie-parser'
 import helmet from 'helmet'
 import { KoreanErrorsFilter } from './common/korean-errors.filter.js'
+import { tempBasicAuthMiddleware } from './security/basic-auth.middleware.js'
 
 export function setupApp(app: INestApplication) {
   app.setGlobalPrefix('api')
@@ -22,6 +23,8 @@ export function setupApp(app: INestApplication) {
       },
     }),
   )
+  app.enableCors({ origin: process.env.WEB_ORIGIN, credentials: true })
+  app.use(tempBasicAuthMiddleware)
   app.use(cookieParser())
   app.useGlobalFilters(new KoreanErrorsFilter())
   app.useGlobalPipes(

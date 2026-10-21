@@ -144,7 +144,7 @@ Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpda
 ### 동작
 
 - 작업: `\NexGitAutoPull` → `C:\nex\deploy\run-auto-deploy.ps1` → `C:\nex\deploy\deploy-safe.mjs`  
-  (저장소 소스: `scripts/deploy-safe.mjs` / `scripts/server/*.ps1`, 브랜치 `deploy-auto`. main 병합 전에는 실행본을 `C:\nex\deploy`에 둔다.)
+  (저장소 소스: `scripts/deploy-safe.mjs` / `scripts/server/*.ps1`. 실행본은 저장소 밖 `C:\nex\deploy` 복사본이다.)
 - 대상 브랜치: 기본 `main` (`DEPLOY_BRANCH` 로 변경 가능)
 - 매 실행: 잠금 → `git fetch` → 새 커밋 없으면 종료 → dirty면 거부 → 이전 실패 커밋과 같으면 스킵  
   → `apps/api/drizzle/` **신규 추가** 파일이 있으면 **배포 안 함** (수동 승인 필요)  
@@ -163,6 +163,29 @@ Get-Content C:\nex\logs\deploy.log -Tail 50
 
 한 줄 JSON: `ts`, `branch`, `result`(`deployed`/`failed`/`rollback`/`skipped`), `from`/`to`, `reason`.  
 실패·롤백·마이그레이션 대기는 `sendNotify` 로도 남긴다(현재 로그, 텔레그램은 토큰 있을 때만).
+
+### 배포 스크립트 수동 복사
+
+`C:\nex\deploy` 는 git 작업 폴더가 아니다. `main` 을 pull 해도 여기 파일은 바뀌지 않는다.  
+`scripts/deploy-safe.mjs` 또는 `scripts/server/*.ps1` 을 수정한 뒤에는 **서버에 수동 복사**해야 다음 자동 배포부터 새 스크립트가 돈다.
+
+| 저장소 | 서버 실행본 |
+| --- | --- |
+| `scripts/deploy-safe.mjs` | `C:\nex\deploy\deploy-safe.mjs` |
+| `scripts/server/run-auto-deploy.ps1` | `C:\nex\deploy\run-auto-deploy.ps1` |
+| `scripts/server/register-nex-auto-deploy.ps1` | 최초 등록용. 이미 작업이 있으면 다시 복사하지 않는다. |
+
+서버 PowerShell (관리자):
+
+```powershell
+# 저장소루트 = 서버에서 git pull 하는 폴더 (예: C:\nex\app)
+Copy-Item -Force <저장소루트>\scripts\deploy-safe.mjs C:\nex\deploy\deploy-safe.mjs
+```
+
+`run-auto-deploy.ps1` 은 실행본이 `$PSScriptRoot` 기준으로 루트를 계산한다. 저장소 파일을 그대로 덮어쓰면 경로가 어긋날 수 있으니, 내용을 확인한 뒤 복사한다.
+
+복사만으로 `nex-api` 재시작은 필요 없다. 다음 `NexGitAutoPull` 주기부터 새 배포 스크립트가 실행된다.  
+배포 스크립트를 고친 커밋을 보고할 때는 이 수동 복사가 필요하다고 적는다.
 
 ### 수동 배포
 
