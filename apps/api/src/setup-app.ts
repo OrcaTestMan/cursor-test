@@ -2,6 +2,7 @@ import { type INestApplication, ValidationPipe } from '@nestjs/common'
 import cookieParser from 'cookie-parser'
 import helmet from 'helmet'
 import type { NextFunction, Request, Response } from 'express'
+import { cookieSecure } from './auth/auth.constants.js'
 import { AuthService } from './auth/auth.service.js'
 import { KoreanErrorsFilter } from './common/korean-errors.filter.js'
 
@@ -9,6 +10,9 @@ export function setupApp(app: INestApplication) {
   app.setGlobalPrefix('api')
   app.use(
     helmet({
+      strictTransportSecurity: cookieSecure()
+        ? { maxAge: 31536000, includeSubDomains: true }
+        : false,
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
