@@ -16,7 +16,8 @@ Windows 서버에서 Nest API·Docker Postgres를 상시 운영할 때 쓰는 �
 | 시크릿 | `C:\backups\live-secrets\` (git 금지) |
 | 사고 증거 | `C:\backups\incident-20261021\` (복원 금지) |
 
-자동 git pull 작업(`NexGitAutoPull`)은 Disabled 로 둔다. 코드 반영은 수동 pull 한다.
+자동 배포 작업(`NexGitAutoPull`)은 `scripts/deploy-safe.mjs` 를 1분마다 호출한다.  
+프론트엔드(Vite) 전용 Windows 서비스는 없다. 서버는 `nex-api`(3000)만 NSSM으로 상시 실행하며, 배포 시 web·api 둘 다 빌드하지만 재시작은 API만 한다.
 
 ## 재부팅 후 복구 순서
 
@@ -135,6 +136,60 @@ Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpda
 
 ## 코드 반영
 
-서버 작업 폴더는 평소 `main` 을 유지하고, 서버 전용 파일은 `server-ops` 브랜치로 올린다.  
-서버 코드 갱신은 `NexGitAutoPull` 이 꺼진 상태에서 수동 `git pull` 한다.  
+서버 작업 폴더는 평소 `main` 을 유지한다.  
 `.env`, `C:\backups\` 시크릿·증거는 절대 커밋하지 않는다.
+
+## 자동 배포 (NexGitAutoPull)
+
+### 동작
+
+- 작업: `\NexGitAutoPull` → `scripts/server/run-auto-deploy.ps1` → `scripts/deploy-safe.mjs`
+- 대상 브랜치: 기본 `main` (`DEPLOY_BRANCH` 로 변경 가능)
+- 매 실행: 잠금 → `git fetch` → 새 커밋 없으면 종료 → dirty면 거부 → 이전 실패 커밋과 같으면 스킵  
+  → `apps/api/drizzle/` **신규 추가** 파일이 있으면 **배포 안 함** (수동 승인 필요)  
+  → `git pull --ff-only` → `yarn install --immutable` → web/api 빌드 → API 단위 테스트  
+  → 성공 시 `nssm restart nex-api` → `/api/health` 최대 60초 재시도  
+  → 빌드 실패: 이전 커밋으로 되돌리고 재빌드, **API 재시작 없음**  
+  → health 실패: 롤백 후 재빌드·API 재시작·health 확인
+- 운영 DB에 붙는 e2e/스크립트 테스트는 실행하지 않는다.
+- 작업 설정: 1분 간격, `MultipleInstances=IgnoreNew`, 스크립트 잠금 병행. RunLevel Highest(nssm용).
+
+### 로그
+
+```powershell
+Get-Content C:\nex\logs\deploy.log -Tail 50
+```
+
+한 줄 JSON: `ts`, `branch`, `result`(`deployed`/`failed`/`rollback`/`skipped`), `from`/`to`, `reason`.  
+실패·롤백·마이그레이션 대기는 `sendNotify` 로도 남긴다(현재 로그, 텔레그램은 토큰 있을 때만).
+
+### 수동 배포
+
+```powershell
+cd <저장소루트>
+$env:DEPLOY_BRANCH = 'main'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\server\run-auto-deploy.ps1
+```
+
+관리자 권한이 있어야 `nssm restart` 가 된다. 스케줄 작업은 Highest 로 등록돼 있다.
+
+### 수동 롤백
+
+```powershell
+cd <저장소루트>
+git fetch origin
+git checkout --force <이전커밋SHA>
+yarn install --immutable
+yarn workspace web build
+yarn workspace api build
+nssm restart nex-api
+Invoke-RestMethod http://127.0.0.1:3000/api/health
+```
+
+### 자동 배포 끄기 / 켜기
+
+```powershell
+Disable-ScheduledTask -TaskName NexGitAutoPull
+Enable-ScheduledTask -TaskName NexGitAutoPull
+Get-ScheduledTask -TaskName NexGitAutoPull | Select-Object TaskName,State
+```
