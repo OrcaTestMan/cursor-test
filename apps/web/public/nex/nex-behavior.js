@@ -1586,7 +1586,7 @@ function paintLinked() {
   paintFlowZone('out', withdraws, true)
   setLabel('총 회원', countText(Object.keys(data.users).length, '명'))
   ensureRiskSummaryCards()
-  paintRiskSummary(open, liveNames)
+  paintRiskSummary()
   setCountLabel('총 베팅액', period.count, period.stake)
   setCountLabel('적중 지급액', period.count, period.payout)
   setCountLabel('미확정 베팅', open.length, openStake)
@@ -2080,26 +2080,8 @@ function byIncoming(rows) {
   return [...rows].sort((a, b) => b.count - a.count || b.stake - a.stake)
 }
 
-const HOT_PAD_ROWS = [
-  { match: 'LA 다저스 vs 샌디에이고 파드리스 (t)', league: 'MLB (t)', sport: '야구 (t)', market: '승무패 (t)', line: '승', when: '일반 (t)', count: 3, stake: 18000, payout: 32400, risk: 14400 },
-  { match: '맨체스터 시티 vs 아스널 (t)', league: 'EPL (t)', sport: '축구 (t)', market: '핸디캡 (t)', line: '-0.5', when: '실시간 (t)', count: 2, stake: 15000, payout: 25500, risk: 10500 },
-  { match: '보스턴 셀틱스 vs 뉴욕 닉스 (t)', league: 'NBA (t)', sport: '농구 (t)', market: '언더오버 (t)', line: '215.5', when: '일반 (t)', count: 2, stake: 12000, payout: 21600, risk: 9600 },
-  { match: '토트넘 vs 첼시 (t)', league: 'EPL (t)', sport: '축구 (t)', market: '승무패 (t)', line: '무', when: '일반 (t)', count: 1, stake: 9000, payout: 19800, risk: 10800 },
-  { match: 'LA 레이커스 vs 골든스테이트 (t)', league: 'NBA (t)', sport: '농구 (t)', market: '핸디캡 (t)', line: '+3.5', when: '실시간 (t)', count: 1, stake: 8000, payout: 15200, risk: 7200 },
-]
-
 function padHotRows(rows, limit = 5) {
-  // API 모드에서는 데모 패딩 금지
-  if (window.__riskApi) return rows.slice(0, limit)
-  const list = [...rows]
-  const used = new Set(list.map((row) => row.match))
-  for (const sample of HOT_PAD_ROWS) {
-    if (list.length >= limit) break
-    if (used.has(sample.match)) continue
-    list.push({ ...sample })
-    used.add(sample.match)
-  }
-  return list.slice(0, limit)
+  return [...rows].slice(0, limit)
 }
 
 const MATCH_FACE = new Map()
@@ -2375,20 +2357,8 @@ function casinoKindOf(bet) {
   return 'other'
 }
 
-function paintRiskFromApi() {
-  const api = window.__riskApi
-  if (!api || !location.pathname.endsWith('/risk.html')) return
-  ensureRiskSummaryCards()
-  reshapeRisk()
-  const board = document.querySelector('[data-risk-board="watch8"]')
-  if (api.summary) {
-    setLabel('미확정 리스크 금액', num(api.summary.maxRisk || 0))
-    setLabel(
-      '진행 중인 라이브 경기 수',
-      countText((api.matches || []).filter((m) => m.live).length, '건'),
-    )
-  }
-  const lines = (api.matches || []).map((m) => {
+function riskApiWatchLines() {
+  return (window.__riskApi?.matches || []).map((m) => {
     const parts = String(m.name || '').split(/\s+vs\s+/i)
     return {
       league: m.league || '',
@@ -2396,71 +2366,242 @@ function paintRiskFromApi() {
       home: (parts[0] || m.name || '').trim(),
       away: (parts[1] || '-').trim(),
       match: m.name || '',
-      market: '승패',
+      market: m.market || '',
       when: m.live ? '실시간' : '일반',
-      count: Number(m.betCount || m.count || 0) || 1,
+      count: Number(m.betCount || m.count || 0),
       stake: Number(m.stake || 0),
       risk: Number(m.maxLoss || m.risk || 0),
     }
   })
+}
+
+function showRiskLoadError(on) {
+  if (!location.pathname.endsWith('/risk.html')) return
+  const stack = document.querySelector('main > .space-y-4')
+  if (!stack) return
+  let bar = stack.querySelector('[data-risk-error]')
+  if (!bar) {
+    bar = document.createElement('div')
+    bar.dataset.riskError = '1'
+    bar.className = 'rounded-xl border border-danger bg-danger-soft px-4 py-3 text-center text-sm font-bold text-danger'
+    bar.textContent = '데이터를 불러오지 못했습니다'
+    stack.prepend(bar)
+  }
+  bar.hidden = !on
+}
+
+async function fetchRiskJson(path) {
+  const res = await fetch(path)
+  if (!res.ok) throw new Error(`${path} ${res.status}`)
+  return res.json()
+}
+
+function ensureRiskMemberHost() {
+  const section = [...document.querySelectorAll('main h2')]
+    .find((item) => item.textContent.includes('회원별 리스크'))
+    ?.closest('section')
+  if (!section) return null
+  const title = section.querySelector('h2')
+  const titleBox = title?.parentElement
+  const titleRow = titleBox?.parentElement
+  if (titleBox) {
+    titleBox.classList.add('w-full', 'text-center')
+    title?.classList.add('inline-flex', 'items-center', 'justify-center')
+  }
+  if (titleRow) {
+    titleRow.classList.remove('justify-between', 'items-end')
+    titleRow.classList.add('w-full')
+  }
+  const empty = [...section.children].find((node) => node.tagName === 'DIV' && /없습니다/.test(node.textContent || ''))
+  let host = section.querySelector('[data-risk-members]')
+  if (!host) {
+    host = document.createElement('div')
+    host.dataset.riskMembers = '1'
+    host.className = 'overflow-x-auto'
+    const table = document.createElement('table')
+    table.className = 'w-full border-collapse text-[13px]'
+    table.append(document.createElement('thead'), document.createElement('tbody'))
+    host.append(table)
+    if (empty) empty.replaceWith(host)
+    else section.append(host)
+  }
+  return section
+}
+
+function paintRiskAlerts(alerts) {
+  const stack = document.querySelector('main > .space-y-4')
+  if (!stack) return
+  let section = stack.querySelector('[data-risk-alerts]')
+  if (!section) {
+    section = document.createElement('section')
+    section.dataset.riskAlerts = '1'
+    section.className = 'space-y-3'
+    const heading = document.createElement('h2')
+    heading.className = 'text-base font-black text-fg text-center'
+    heading.textContent = '리스크 알림'
+    const host = document.createElement('div')
+    host.className = 'overflow-x-auto'
+    const table = document.createElement('table')
+    table.className = 'w-full border-collapse text-[13px]'
+    table.append(document.createElement('thead'), document.createElement('tbody'))
+    host.append(table)
+    section.append(heading, host)
+    const member = [...stack.querySelectorAll('section')].find((item) =>
+      item.querySelector('h2')?.textContent.includes('회원별 리스크'),
+    )
+    if (member) member.after(section)
+    else stack.append(section)
+  }
+  const table = section.querySelector('table')
+  const head = table?.tHead
+  const body = table?.tBodies[0]
+  if (!head || !body) return
+  const headers = ['번호', '종류', '심각도', '내용', '확인']
+  head.replaceChildren((() => {
+    const row = document.createElement('tr')
+    headers.forEach((label) => {
+      const cell = document.createElement('th')
+      cell.textContent = label
+      row.append(cell)
+    })
+    return row
+  })())
+  if (window.__riskApiError) {
+    const row = document.createElement('tr')
+    const cell = document.createElement('td')
+    cell.colSpan = headers.length
+    cell.textContent = '데이터를 불러오지 못했습니다'
+    row.append(cell)
+    body.replaceChildren(row)
+    return
+  }
+  const rows = Array.isArray(alerts) ? alerts : []
+  if (!rows.length) {
+    const row = document.createElement('tr')
+    const cell = document.createElement('td')
+    cell.colSpan = headers.length
+    cell.textContent = '알림이 없습니다.'
+    row.append(cell)
+    body.replaceChildren(row)
+    return
+  }
+  body.replaceChildren(...rows.map((item) => {
+    const tr = document.createElement('tr')
+    ;[item.id, item.kind, item.severity, item.message, item.acked ? '확인' : '미확인'].forEach((value) => {
+      const cell = document.createElement('td')
+      cell.textContent = String(value ?? '')
+      tr.append(cell)
+    })
+    return tr
+  }))
+}
+
+function paintRiskFromApi() {
+  const api = window.__riskApi
+  if (!location.pathname.endsWith('/risk.html')) return
+  ensureRiskSummaryCards()
+  reshapeRisk()
+  paintRiskSummaryFromApi()
+  const board = document.querySelector('[data-risk-board="watch8"]')
+  const lines = riskApiWatchLines()
   if (board) {
     bindRiskWatchFilters(board)
     paintRiskWatchFilters(board)
-    const sports = riskParsePicks(board.dataset.riskSport)
-    const markets = riskParsePicks(board.dataset.riskMarket)
-    const whens = riskParsePicks(board.dataset.riskWhen)
-    const q = (board.dataset.riskQ || '').toLowerCase()
-    const sort = board.dataset.riskSort || 'risk'
-    let filtered = lines.slice()
-    if (sports.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.sport, sports, 'sport'))
-    if (markets.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.market, markets, 'market'))
-    if (whens.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.when, whens, 'when'))
-    if (q) {
-      filtered = filtered.filter((row) =>
-        [row.league, row.sport, row.home, row.away, row.match, row.market, row.when]
-          .join(' ')
-          .toLowerCase()
-          .includes(q))
+    if (window.__riskApiError) {
+      const table = board.querySelector('[data-risk-watch] table')
+      const body = table?.tBodies[0]
+      if (body) {
+        const row = document.createElement('tr')
+        const cell = document.createElement('td')
+        cell.colSpan = 9
+        cell.textContent = '데이터를 불러오지 못했습니다'
+        row.append(cell)
+        body.replaceChildren(row)
+      }
+    } else {
+      const sports = riskParsePicks(board.dataset.riskSport)
+      const markets = riskParsePicks(board.dataset.riskMarket)
+      const whens = riskParsePicks(board.dataset.riskWhen)
+      const q = (board.dataset.riskQ || '').toLowerCase()
+      const sort = board.dataset.riskSort || 'risk'
+      let filtered = lines.slice()
+      if (sports.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.sport, sports, 'sport'))
+      if (markets.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.market, markets, 'market'))
+      if (whens.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.when, whens, 'when'))
+      if (q) {
+        filtered = filtered.filter((row) =>
+          [row.league, row.sport, row.home, row.away, row.match, row.market, row.when]
+            .join(' ')
+            .toLowerCase()
+            .includes(q))
+      }
+      filtered.sort((a, b) => {
+        if (sort === 'stake') return b.stake - a.stake || b.risk - a.risk
+        if (sort === 'count') return b.count - a.count || b.risk - a.risk
+        return b.risk - a.risk || b.stake - a.stake
+      })
+      paintRiskWatchTable(board, filtered)
     }
-    filtered.sort((a, b) => {
-      if (sort === 'stake') return b.stake - a.stake || b.risk - a.risk
-      if (sort === 'count') return b.count - a.count || b.risk - a.risk
-      return b.risk - a.risk || b.stake - a.stake
-    })
-    paintRiskWatchTable(board, filtered)
   }
-  const memberSection = [...document.querySelectorAll('main h2')]
-    .find((item) => item.textContent.includes('회원별 리스크'))
-    ?.closest('section')
-  if (memberSection && Array.isArray(api.members)) {
-    const linesMembers = api.members.map((u) => [
-      `${u.nick || u.login}(${u.login})`,
-      '0건',
-      riskMoney(0),
-      riskMoney(0),
-      riskMoney(u.money || 0),
-      '0건',
-      riskMoney(0),
-      riskMoney(0),
-      riskMoney(u.money || 0),
-    ])
-    fillRiskMemberTable(memberSection, linesMembers)
+  const memberSection = ensureRiskMemberHost()
+  if (memberSection) {
+    if (window.__riskApiError) {
+      fillRiskMemberTable(memberSection, [])
+      const empty = memberSection.querySelector('[data-risk-members] td')
+      if (empty) empty.textContent = '데이터를 불러오지 못했습니다'
+    } else {
+      const linesMembers = (api?.members || []).map((u) => [
+        `${u.nick || u.login}(${u.login})`,
+        `${Number(u.sportCount || 0)}건`,
+        riskMoney(u.sportStake || 0),
+        riskMoney(u.sportRisk || 0),
+        riskMoney(u.money || 0),
+        `${Number(u.casinoCount || 0)}건`,
+        riskMoney(u.casinoStake || 0),
+        riskMoney(u.casinoRisk || 0),
+        riskMoney(u.money || 0),
+      ])
+      fillRiskMemberTable(memberSection, linesMembers)
+    }
   }
+  paintRiskAlerts(api?.alerts || [])
   const refreshed = [...document.querySelectorAll('main span')].find((node) =>
     /^갱신\s/.test(node.textContent.trim()),
   )
-  if (refreshed) refreshed.textContent = `갱신 ${stamp()} · API`
+  if (refreshed) refreshed.textContent = window.__riskApiError ? '갱신 실패' : `갱신 ${stamp()} · API`
+}
+
+function paintRiskSummaryFromApi() {
+  if (!location.pathname.endsWith('/risk.html')) return
+  tintRiskBetZones()
+  const api = window.__riskApi
+  if (!api?.summary) return
+  setLabel('미확정 리스크 금액', num(api.summary.maxRisk || 0))
+  setLabel('진행 중인 라이브 경기 수', countText(api.summary.liveMatches || 0, '건'))
+  const liveSection = document.querySelector('[data-risk-zones] [data-tone="live"]')
+  const normalSection = document.querySelector('[data-risk-zones] [data-tone="sport"]')
+  const liveCasinoSection = document.querySelector('[data-risk-zones] [data-tone="casino-live"]')
+  const slotSection = document.querySelector('[data-risk-zones] [data-tone="casino-slot"]')
+  setLabelIn(liveSection, '건수', countText(api.summary.liveBets?.count || 0, '건'))
+  setLabelIn(liveSection, '금액', wonText(api.summary.liveBets?.stake || 0))
+  setLabelIn(normalSection, '건수', countText(api.summary.prematchBets?.count || 0, '건'))
+  setLabelIn(normalSection, '금액', wonText(api.summary.prematchBets?.stake || 0))
+  setLabelIn(liveCasinoSection, '건수', countText(api.summary.casinoLive?.count || 0, '건'))
+  setLabelIn(liveCasinoSection, '금액', wonText(api.summary.casinoLive?.stake || 0))
+  setLabelIn(slotSection, '건수', countText(api.summary.casinoSlot?.count || 0, '건'))
+  setLabelIn(slotSection, '금액', wonText(api.summary.casinoSlot?.stake || 0))
 }
 
 async function hydrateRiskFromApi() {
   if (!location.pathname.endsWith('/risk.html')) return
   try {
     const [summary, matches, members, alerts] = await Promise.all([
-      fetch('/api/risk/summary').then((r) => r.json()),
-      fetch('/api/risk/matches?limit=50').then((r) => r.json()),
-      fetch('/api/risk/members?limit=50').then((r) => r.json()),
-      fetch('/api/risk/alerts').then((r) => r.json()),
+      fetchRiskJson('/api/risk/summary'),
+      fetchRiskJson('/api/risk/matches?limit=50'),
+      fetchRiskJson('/api/risk/members?limit=50'),
+      fetchRiskJson('/api/risk/alerts'),
     ])
+    window.__riskApiError = false
     window.__riskApi = {
       summary,
       matches: matches.items || [],
@@ -2468,6 +2609,7 @@ async function hydrateRiskFromApi() {
       alerts: Array.isArray(alerts) ? alerts : [],
       fetchedAt: Date.now(),
     }
+    showRiskLoadError(false)
     paintRiskFromApi()
     if (!window.__riskSse) {
       window.__riskSse = new EventSource('/api/risk/stream')
@@ -2476,6 +2618,10 @@ async function hydrateRiskFromApi() {
       }
     }
   } catch (err) {
+    window.__riskApiError = true
+    window.__riskApi = window.__riskApi || { summary: null, matches: [], members: [], alerts: [] }
+    showRiskLoadError(true)
+    paintRiskFromApi()
     console.warn('risk api hydrate failed', err)
   }
 }
@@ -2540,31 +2686,10 @@ function tintRiskBetZones() {
   })
 }
 
-function paintRiskSummary(open, liveNames) {
+function paintRiskSummary() {
   if (!location.pathname.endsWith('/risk.html')) return
   ensureRiskSummaryCards()
-  tintRiskBetZones()
-  const liveBets = open.filter((bet) => marketOf(bet[4], bet[2]).when === '실시간')
-  const normalBets = open.filter((bet) => marketOf(bet[4], bet[2]).when !== '실시간')
-  const stakeSum = (rows) => rows.reduce((sum, bet) => sum + Number(bet[3] || 0), 0)
-  const casinoStakeSum = (rows) => rows.reduce((sum, bet) => sum + Number(bet.stake || 0), 0)
-  const openCasino = (store().casinoBets || []).filter((bet) => bet.status === '진행 중')
-  const liveCasino = openCasino.filter((bet) => casinoKindOf(bet) === 'live')
-  const slotCasino = openCasino.filter((bet) => casinoKindOf(bet) === 'slot')
-  setLabel('미확정 리스크 금액', num(open.reduce((sum, bet) => sum + Math.max(0, Number(bet[5]) - Number(bet[3])), 0)))
-  setLabel('진행 중인 라이브 경기 수', countText(liveNames.length, '건'))
-  const liveSection = document.querySelector('[data-risk-zones] [data-tone="live"]')
-  const normalSection = document.querySelector('[data-risk-zones] [data-tone="sport"]')
-  const liveCasinoSection = document.querySelector('[data-risk-zones] [data-tone="casino-live"]')
-  const slotSection = document.querySelector('[data-risk-zones] [data-tone="casino-slot"]')
-  setLabelIn(liveSection, '건수', countText(liveBets.length, '건'))
-  setLabelIn(liveSection, '금액', wonText(stakeSum(liveBets)))
-  setLabelIn(normalSection, '건수', countText(normalBets.length, '건'))
-  setLabelIn(normalSection, '금액', wonText(stakeSum(normalBets)))
-  setLabelIn(liveCasinoSection, '건수', countText(liveCasino.length, '건'))
-  setLabelIn(liveCasinoSection, '금액', wonText(casinoStakeSum(liveCasino)))
-  setLabelIn(slotSection, '건수', countText(slotCasino.length, '건'))
-  setLabelIn(slotSection, '금액', wonText(casinoStakeSum(slotCasino)))
+  if (window.__riskApi) paintRiskSummaryFromApi()
 }
 
 function makeRiskChip(label, on, attrs = {}) {
@@ -3050,7 +3175,7 @@ function bindRiskWatchFilters(board) {
         closeRiskFilterCard(board)
         return
       }
-      const lines = riskWatchLines(openRiskRows(store()))
+      const lines = riskApiWatchLines()
       openRiskFilterCard(board, dim, lines)
       return
     }
@@ -3161,44 +3286,14 @@ function paintRiskWatchFilters(board) {
   })
 }
 
-function paintRiskMonitor(data = store()) {
+function paintRiskMonitor() {
   if (!location.pathname.endsWith('/risk.html')) return
-  if (window.__riskApi) {
+  reshapeRisk()
+  if (window.__riskApi || window.__riskApiError) {
     paintRiskFromApi()
     return
   }
-  reshapeRisk()
-  const board = document.querySelector('[data-risk-board="watch8"]')
-  if (!board) return
-  bindRiskWatchFilters(board)
-  const rows = openRiskRows(data)
-  const lines = riskWatchLines(rows)
-  paintRiskWatchFilters(board)
-  const sports = riskParsePicks(board.dataset.riskSport)
-  const markets = riskParsePicks(board.dataset.riskMarket)
-  const whens = riskParsePicks(board.dataset.riskWhen)
-  const q = (board.dataset.riskQ || '').toLowerCase()
-  const sort = board.dataset.riskSort || 'risk'
-  let filtered = lines.slice()
-  if (sports.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.sport, sports, 'sport'))
-  if (markets.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.market, markets, 'market'))
-  if (whens.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.when, whens, 'when'))
-  if (q) {
-    filtered = filtered.filter((row) =>
-      [row.league, row.sport, row.home, row.away, row.match, row.market, row.when]
-        .join(' ')
-        .toLowerCase()
-        .includes(q))
-  }
-  filtered.sort((a, b) => {
-    if (sort === 'stake') return b.stake - a.stake || b.risk - a.risk
-    if (sort === 'count') return b.count - a.count || b.risk - a.risk
-    return b.risk - a.risk || b.stake - a.stake
-  })
-  paintRiskWatchTable(board, filtered)
-  paintRiskMembers(data, rows)
-  const refreshed = [...document.querySelectorAll('main span')].find((node) => /^갱신\s/.test(node.textContent.trim()))
-  if (refreshed) refreshed.textContent = `갱신 ${stamp()}`
+  hydrateRiskFromApi()
 }
 
 const REVIEW_REC = {

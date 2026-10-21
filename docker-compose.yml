@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: nex
       POSTGRES_DB: nex
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - nex_pg_data:/var/lib/postgresql/data
     healthcheck:

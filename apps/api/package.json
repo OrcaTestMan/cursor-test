@@ -20,6 +20,8 @@
     "seed:perf": "node scripts/seed-perf.mjs",
     "money:concurrency": "node scripts/test-money-concurrency.mjs",
     "money:verify-daily": "node scripts/money-verify-daily.mjs",
+    "risk:verify-screen": "node scripts/risk-screen-verify.mjs",
+    "seed:ops": "node scripts/seed-ops.mjs",
     "test:step2": "node scripts/test-step2-fix.mjs",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",

@@ -9,8 +9,8 @@
 | 컨테이너 | `nex-postgres` (`docker compose`) |
 | DB 이름 | `nex` |
 | 사용자 / 비밀번호 | `nex` / `nex` |
-| 포트 | `5432` |
-| URL | `postgresql://nex:nex@localhost:5432/nex` |
+| 포트 | `127.0.0.1:5432` (`docker-compose.yml` — 외부 바인딩 없음) |
+| URL | `postgresql://nex:nex@127.0.0.1:5432/nex` |
 
 `apps/api/.env`의 `DATABASE_URL`에 위 URL을 둔다. 비밀번호는 Git에 올리지 않는다(예시만 `.env.example`).
 

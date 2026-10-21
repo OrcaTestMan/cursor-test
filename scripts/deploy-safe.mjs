@@ -7,6 +7,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import { sendNotify } from '../apps/api/scripts/lib/notify.mjs'
 
 const ROOT = process.cwd()
 const API = process.env.HEALTH_URL || 'http://127.0.0.1:3000/api/health'
@@ -57,6 +58,11 @@ async function main() {
   const ok = await healthOk()
   if (!ok) {
     console.error('health failed — rollback to previous sha required')
+    await sendNotify({
+      level: 'error',
+      title: 'deploy-safe health 실패',
+      detail: API,
+    })
     process.exit(2)
   }
   console.log('deploy-safe OK')

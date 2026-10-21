@@ -7,6 +7,7 @@ import { CashModule } from './cash/cash.module.js'
 import { validateEnv } from './config/env.validation.js'
 import { DbModule } from './db/db.module.js'
 import { MoneyModule } from './money/money.module.js'
+import { NotifyModule } from './notify/notify.module.js'
 import { RiskModule } from './risk/risk.module.js'
 import { SecurityModule } from './security/security.module.js'
 import { UsersModule } from './users/users.module.js'
@@ -20,6 +21,7 @@ import { UsersModule } from './users/users.module.js'
     CashModule,
     BetsModule,
     MoneyModule,
+    NotifyModule,
     RiskModule,
   ],
   controllers: [AppController],

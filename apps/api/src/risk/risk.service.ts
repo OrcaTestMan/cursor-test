@@ -49,11 +49,50 @@ export class RiskService {
       .select({ value: sql<number>`count(*)::int` })
       .from(riskAlerts)
       .where(eq(riskAlerts.acked, false))
+    const [{ value: liveMatches }] = await this.db
+      .select({ value: sql<number>`count(*)::int` })
+      .from(matches)
+      .where(eq(matches.live, true))
+    const [zones] = await this.db.execute(sql`
+      SELECT
+        count(*) FILTER (WHERE match_live AND status = '진행 중')::int AS live_count,
+        coalesce(sum(stake) FILTER (WHERE match_live AND status = '진행 중'), 0)::bigint AS live_stake,
+        count(*) FILTER (WHERE NOT match_live AND status = '진행 중')::int AS prematch_count,
+        coalesce(sum(stake) FILTER (WHERE NOT match_live AND status = '진행 중'), 0)::bigint AS prematch_stake
+      FROM nex_bets
+    `)
+    const [casino] = await this.db.execute(sql`
+      SELECT
+        count(*) FILTER (WHERE kind = 'live' AND status = '진행 중')::int AS live_count,
+        coalesce(sum(stake) FILTER (WHERE kind = 'live' AND status = '진행 중'), 0)::bigint AS live_stake,
+        count(*) FILTER (WHERE kind = 'slot' AND status = '진행 중')::int AS slot_count,
+        coalesce(sum(stake) FILTER (WHERE kind = 'slot' AND status = '진행 중'), 0)::bigint AS slot_stake
+      FROM nex_casino_bets
+    `)
+    const zoneRow = (zones || {}) as Record<string, unknown>
+    const casinoRow = (casino || {}) as Record<string, unknown>
     return {
       maxRisk,
       openStake,
       openBets: Number(openBets),
       unackedAlerts: Number(alertCount),
+      liveMatches: Number(liveMatches),
+      liveBets: {
+        count: Number(zoneRow.live_count || 0),
+        stake: Number(zoneRow.live_stake || 0),
+      },
+      prematchBets: {
+        count: Number(zoneRow.prematch_count || 0),
+        stake: Number(zoneRow.prematch_stake || 0),
+      },
+      casinoLive: {
+        count: Number(casinoRow.live_count || 0),
+        stake: Number(casinoRow.live_stake || 0),
+      },
+      casinoSlot: {
+        count: Number(casinoRow.slot_count || 0),
+        stake: Number(casinoRow.slot_stake || 0),
+      },
       lossLimit,
       limitUsagePct: lossLimit > 0 ? Math.round((maxRisk / lossLimit) * 1000) / 10 : 0,
     }
@@ -88,8 +127,10 @@ export class RiskService {
         .where(eq(riskExposure.matchId, m.id))
       let stake = 0
       let maxLoss = 0
+      let betCount = 0
       for (const e of exp) {
         stake += e.stakeSum
+        betCount += e.betCount
         const loss = e.payoutSum - e.stakeSum
         if (loss > maxLoss) maxLoss = loss
       }
@@ -107,6 +148,7 @@ export class RiskService {
         ...m,
         stake,
         maxLoss,
+        betCount,
         riskScore: Math.round(score * 10) / 10,
       })
     }
@@ -148,24 +190,60 @@ export class RiskService {
   async listMembers(query: { cursor?: string; limit?: number }) {
     const limit = Math.min(Math.max(query.limit ?? 20, 1), 100)
     const cursorId = query.cursor ? Number(query.cursor) : null
-    const filters = [eq(users.role, 'member')]
-    if (cursorId) filters.push(gt(users.id, cursorId))
-    const items = await this.db
-      .select({
-        id: users.id,
-        login: users.login,
-        nick: users.nick,
-        grade: users.grade,
-        money: users.money,
-        lastIp: users.lastIp,
-        lastDevice: users.lastDevice,
-        withdrawAccount: users.withdrawAccount,
-        status: users.status,
-      })
-      .from(users)
-      .where(and(...filters))
-      .orderBy(asc(users.id))
-      .limit(limit)
+    const rows = await this.db.execute(sql`
+      SELECT
+        u.id, u.login, u.nick, u.grade, u.money,
+        u.last_ip, u.last_device, u.withdraw_account, u.status,
+        COALESCE(s.cnt, 0)::int AS sport_count,
+        COALESCE(s.stake, 0)::bigint AS sport_stake,
+        COALESCE(s.risk, 0)::bigint AS sport_risk,
+        COALESCE(c.cnt, 0)::int AS casino_count,
+        COALESCE(c.stake, 0)::bigint AS casino_stake,
+        COALESCE(c.risk, 0)::bigint AS casino_risk
+      FROM nex_users u
+      LEFT JOIN (
+        SELECT user_id,
+          count(*)::int AS cnt,
+          coalesce(sum(stake), 0)::bigint AS stake,
+          coalesce(sum(GREATEST(potential_payout - stake, 0)), 0)::bigint AS risk
+        FROM nex_bets
+        WHERE status = '진행 중'
+        GROUP BY user_id
+      ) s ON s.user_id = u.id
+      LEFT JOIN (
+        SELECT user_id,
+          count(*)::int AS cnt,
+          coalesce(sum(stake), 0)::bigint AS stake,
+          coalesce(sum(GREATEST(payout - stake, 0)), 0)::bigint AS risk
+        FROM nex_casino_bets
+        WHERE status = '진행 중'
+        GROUP BY user_id
+      ) c ON c.user_id = u.id
+      WHERE u.role = 'member'
+        AND (${cursorId}::int IS NULL OR u.id > ${cursorId})
+      ORDER BY u.id
+      LIMIT ${limit}
+    `)
+    const items = [...rows].map((row) => {
+      const r = row as Record<string, unknown>
+      return {
+        id: Number(r.id),
+        login: String(r.login),
+        nick: String(r.nick),
+        grade: String(r.grade || 'normal'),
+        money: Number(r.money || 0),
+        lastIp: String(r.last_ip || ''),
+        lastDevice: String(r.last_device || ''),
+        withdrawAccount: String(r.withdraw_account || ''),
+        status: String(r.status || 'active'),
+        sportCount: Number(r.sport_count || 0),
+        sportStake: Number(r.sport_stake || 0),
+        sportRisk: Number(r.sport_risk || 0),
+        casinoCount: Number(r.casino_count || 0),
+        casinoStake: Number(r.casino_stake || 0),
+        casinoRisk: Number(r.casino_risk || 0),
+      }
+    })
     const nextCursor =
       items.length === limit ? String(items[items.length - 1].id) : null
     return { items, nextCursor, limit }

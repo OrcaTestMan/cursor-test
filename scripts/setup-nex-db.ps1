@@ -4,7 +4,7 @@
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
-Write-Host '1) Docker PostgreSQL (nex / nex / nex:5432)'
+Write-Host '1) Docker PostgreSQL (nex / nex / 127.0.0.1:5432)'
 docker compose up -d --wait
 
 $envFile = 'apps/api/.env'

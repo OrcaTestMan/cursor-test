@@ -1,11 +1,12 @@
 /**
  * 잔액 검증 일일 작업 (로컬/서버 스케줄러에서 호출).
- * 알림 채널은 아침 결정 — 지금은 파일 로그만.
+ * 실패 시 sendNotify (로그 + 선택적 텔레그램).
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import postgres from 'postgres'
+import { sendNotify } from './lib/notify.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const logDir = path.join(root, 'logs')
@@ -56,6 +57,17 @@ const payload = {
 const line = JSON.stringify(payload)
 fs.appendFileSync(logFile, line + '\n', 'utf8')
 console.log(line)
+
+if (!payload.ok) {
+  await sendNotify({
+    level: 'error',
+    title: '잔액 검증 실패',
+    detail: error
+      ? String(error)
+      : `mismatchCount=${payload.mismatchCount}`,
+    extra: { mismatchCount: payload.mismatchCount },
+  })
+}
 
 await sql.end()
 process.exitCode = payload.ok ? 0 : 1
