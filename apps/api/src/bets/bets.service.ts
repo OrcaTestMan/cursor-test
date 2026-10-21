@@ -120,6 +120,7 @@ export class BetsService {
           potentialPayout: body.potentialPayout,
           status: '진행 중',
           matchLive: body.whenLabel === '실시간',
+          folderKind: 'single',
         })
         .returning()
       await this.wallet.applyMoney(tx, {

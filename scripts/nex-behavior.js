@@ -1,11 +1,123 @@
-const STORE_KEY = 'nex-demo-state-v1'
-const TEST_MARK = ' (t)'
+;(function bootAdminSession() {
+  const path = location.pathname
+  const isLogin = /\/nex\/login\.html$/i.test(path)
+  if (!path.startsWith('/nex/')) return
+  fetch('/api/auth/me', { credentials: 'include' })
+    .then(async (res) => {
+      if (res.ok) {
+        const me = await res.json()
+        if (isLogin) {
+          location.replace('/nex/dashboard.html')
+          return
+        }
+        const name = document.querySelector('header .text-dim .truncate, header .text-\\[13px\\]')
+        if (name) {
+          name.innerHTML = `${me.nick}<span class="font-normal text-muted">(${me.login})</span>`
+        }
+        mountOtpToggle(me)
+        document.querySelectorAll('aside button').forEach((btn) => {
+          if (!/로그아웃/.test(btn.textContent || '')) return
+          btn.addEventListener('click', async (event) => {
+            event.preventDefault()
+            await fetch('/api/auth/logout', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+            })
+            location.replace('/nex/login.html')
+          })
+        })
+        return
+      }
+      if (!isLogin) location.replace('/nex/login.html')
+    })
+    .catch(() => {
+      if (!isLogin) location.replace('/nex/login.html')
+    })
+})()
+
+function redirectIfAuthLost(res) {
+  if (res && res.status === 401) {
+    location.replace('/nex/login.html')
+    return true
+  }
+  return false
+}
+
+function otpToggleClass(active) {
+  return active
+    ? 'h-7 min-w-7 rounded-full px-2 text-[11px] font-black transition-colors bg-accent text-bg'
+    : 'h-7 min-w-7 rounded-full px-2 text-[11px] font-black transition-colors text-muted hover:text-fg'
+}
+
+function paintOtpToggle(root, required) {
+  const on = root.querySelector('[data-otp="on"]')
+  const off = root.querySelector('[data-otp="off"]')
+  if (on) {
+    on.setAttribute('aria-pressed', required ? 'true' : 'false')
+    on.className = otpToggleClass(required)
+  }
+  if (off) {
+    off.setAttribute('aria-pressed', required ? 'false' : 'true')
+    off.className = otpToggleClass(!required)
+  }
+}
+
+function mountOtpToggle(me) {
+  const lang = document.querySelector('header [aria-label^="팀명 언어"]')
+  const bar = lang?.parentElement || document.querySelector('header .flex.items-center.gap-2\\.5')
+  let group = document.querySelector('[data-otp-toggle]')
+  if (!group) {
+    if (!bar) return
+    group = document.createElement('div')
+    group.dataset.otpToggle = '1'
+    group.className = 'flex h-9 items-center rounded-full border border-edge pl-2.5 pr-1 gap-1'
+    group.setAttribute('role', 'group')
+    group.setAttribute('aria-label', 'OTP')
+    group.title = '관리자 로그인 구글 OTP. on이면 코드 필수, off면 아이디·비밀번호만.'
+    group.innerHTML = `<span class="pr-1 text-[11px] font-bold text-muted" aria-hidden="true">OTP</span><button type="button" data-otp="on" aria-pressed="true" class="${otpToggleClass(true)}">on</button><button type="button" data-otp="off" aria-pressed="false" class="${otpToggleClass(false)}">off</button>`
+    if (lang) bar.insertBefore(group, lang)
+    else bar.prepend(group)
+  }
+  if (group.dataset.otpBound === '1') return
+  group.dataset.otpBound = '1'
+  const canEdit = me?.role === 'superadmin' || me?.role === 'operator'
+  fetch('/api/auth/otp', { credentials: 'include' })
+    .then(async (res) => {
+      if (!res.ok) throw new Error('otp')
+      return res.json()
+    })
+    .then((data) => paintOtpToggle(group, data.required !== false))
+    .catch(() => {})
+  group.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-otp]')
+    if (!button) return
+    if (!canEdit) {
+      toast('권한이 없습니다.')
+      return
+    }
+    const required = button.dataset.otp === 'on'
+    const res = await fetch('/api/auth/otp', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ required }),
+    })
+    if (!res.ok) {
+      if (redirectIfAuthLost(res)) return
+      toast(res.status === 403 ? '권한이 없습니다.' : '데이터를 불러오지 못했습니다')
+      return
+    }
+    const data = await res.json()
+    paintOtpToggle(group, data.required !== false)
+    toast(data.required ? 'OTP on' : 'OTP off')
+  })
+}
+
+const STORE_KEY = 'nex-ops-state-v1'
 
 function testTag(text) {
-  const value = String(text ?? '')
-  if (!value) return value
-  if (/\s*\(t\)\s*$/.test(value)) return value.replace(/\s*\(t\)\s*$/, TEST_MARK)
-  return value + TEST_MARK
+  return String(text ?? '')
 }
 
 const STATUS_CLASS = {
@@ -16,6 +128,8 @@ const STATUS_CLASS = {
   '진행 중': 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap bg-info/15 text-info',
   적중: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap bg-accent-soft text-accent',
   미적중: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap bg-danger-soft text-danger',
+  적특: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap bg-gold-soft text-gold',
+  취소: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap bg-card-hover text-dim',
   예정: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap bg-card-hover text-dim',
   라이브: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap bg-danger-soft text-danger',
   종료: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap bg-card-hover text-dim',
@@ -39,29 +153,28 @@ const REAL_GAMES = [
 ]
 
 const MATCHES = [
-  ['호주 NSW NPL', '시드니 올림픽 vs 시드니 유나이티드 58', 3, 25000],
-  ['호주 NSW NPL', '맨리 유나이티드 vs NWS 스피릿', 3, 25000],
-  ['MLB', '샌디에이고 파드리스 vs 워싱턴 내셔널스', 1, 10000],
-  ['MLB', '밀워키 브루어스 vs 시카고 컵스', 2, 30000],
-  ['MLB', '디트로이트 타이거스 vs 미네소타 트윈스', 2, 17000],
-  ['EPL (t)', '맨체스터 시티 vs 아스널 (t)', 2, 26000],
-  ['NBA (t)', '보스턴 셀틱스 vs 뉴욕 닉스 (t)', 1, 12000],
-  ['NBA (t)', 'LA 레이커스 vs 골든스테이트 (t)', 1, 8000],
-  ['EPL (t)', '토트넘 vs 첼시 (t)', 1, 9000],
+  ['EPL', '리버풀 vs 첼시', 10, 220800],
+  ['NBA', '보스턴 셀틱스 vs 뉴욕 닉스', 4, 28000],
+  ['EPL', '토트넘 vs 아스널', 3, 27000],
+  ['MLB', '탬파베이 레이스 vs 클리블랜드 가디언스', 3, 23000],
+  ['KBO', 'KIA 타이거즈 vs LG 트윈스', 4, 35000],
+  ['K리그1', '울산 HD vs 전북 현대', 3, 28000],
+  ['EPL', '맨체스터 시티 vs 아스널', 3, 26000],
+  ['KBL', '서울 SK vs 원주 DB', 2, 20000],
 ]
 
 const BETS = [
-  ['test', '테스트유저 (t)', '밀워키 브루어스 vs 시카고 컵스', 10000, '4.127', 42504, '진행 중'],
-  ['test', '테스트유저 (t)', '디트로이트 타이거스 vs 미네소타 트윈스', 10000, '9.024', 92943, '진행 중'],
-  ['test', '테스트유저 (t)', '시드니 올림픽 vs 시드니 유나이티드 58', 10000, '10.088', 100879, '미적중'],
-  ['test', '테스트유저 (t)', '시드니 올림픽 vs 시드니 유나이티드 58', 5000, '12.774', 66424, '적중'],
-  ['test123', '테스트용 (t)', '맨체스터 시티 vs 아스널 (t)', 15000, '2.150', 32250, '진행 중'],
-  ['user03', '회원03 (t)', '보스턴 셀틱스 vs 뉴욕 닉스 (t)', 12000, '1.900', 22800, '진행 중'],
-  ['user05', '회원05 (t)', 'LA 레이커스 vs 골든스테이트 (t)', 8000, '1.850', 14800, '진행 중'],
-  ['test', '테스트유저 (t)', '토트넘 vs 첼시 (t)', 9000, '3.200', 28800, '진행 중'],
-  ['user03', '회원03 (t)', '밀워키 브루어스 vs 시카고 컵스', 20000, '1.750', 35000, '진행 중'],
-  ['test123', '테스트용 (t)', '디트로이트 타이거스 vs 미네소타 트윈스', 7000, '2.450', 17150, '진행 중'],
-  ['user05', '회원05 (t)', '맨체스터 시티 vs 아스널 (t)', 11000, '1.950', 21450, '진행 중'],
+  ['leesu', '이수민', '리버풀 vs 첼시', 10000, '1.750', 17500, '진행 중'],
+  ['leesu', '이수민', 'KIA 타이거즈 vs LG 트윈스', 10000, '2.000', 20000, '적중'],
+  ['leesu', '이수민', '울산 HD vs 전북 현대', 8000, '3.400', 27200, '진행 중'],
+  ['yoonah', '윤아현', '맨체스터 시티 vs 아스널', 15000, '2.150', 32250, '진행 중'],
+  ['yoonah', '윤아현', 'KIA 타이거즈 vs LG 트윈스', 10000, '2.000', 20000, '미적중'],
+  ['kangst', '강서준', '보스턴 셀틱스 vs 뉴욕 닉스', 12000, '1.900', 22800, '진행 중'],
+  ['seojw', '서준우', '서울 SK vs 원주 DB', 8000, '1.850', 14800, '진행 중'],
+  ['parkdh', '박도현', '토트넘 vs 아스널', 9000, '3.200', 28800, '진행 중'],
+  ['kangst', '강서준', '리버풀 vs 첼시', 20000, '1.750', 35000, '진행 중'],
+  ['yoonah', '윤아현', '탬파베이 레이스 vs 클리블랜드 가디언스', 7000, '2.450', 17150, '진행 중'],
+  ['seojw', '서준우', '맨체스터 시티 vs 아스널', 11000, '1.950', 21450, '진행 중'],
 ]
 
 const BET_MARKETS = {
@@ -79,22 +192,24 @@ const BET_MARKETS = {
 }
 
 const BASE_USERS = {
-  test: { nick: '테스트유저 (t)', money: 66924, points: 0, blocked: false },
-  test123: { nick: '테스트용 (t)', money: 10000, points: 0, blocked: false },
-  user03: { nick: '회원03 (t)', money: 18500, points: 200, blocked: false },
-  user04: { nick: '회원04 (t)', money: 12400, points: 0, blocked: true, blockReason: '중복 계정 (t)' },
-  user05: { nick: '회원05 (t)', money: 8600, points: 50, blocked: false },
+  leesu: { nick: '이수민', money: 250000, points: 0, blocked: false },
+  yoonah: { nick: '윤아현', money: 251000, points: 0, blocked: false },
+  kangst: { nick: '강서준', money: 252000, points: 200, blocked: false },
+  hansy: { nick: '한소연', money: 0, points: 0, blocked: true, blockReason: '중복 계정' },
+  seojw: { nick: '서준우', money: 253000, points: 50, blocked: false },
+  parkdh: { nick: '박도현', money: 200000, points: 0, blocked: false },
+  kimjs: { nick: '김지성', money: 500000, points: 0, blocked: false },
 }
 
 const CAPTURED_CASH = {
-  9: { login: 'test123', type: '입금', amount: 10000, status: '승인' },
-  8: { login: 'test', type: '출금', amount: 20000, status: '지급 실패' },
-  7: { login: 'test', type: '출금', amount: 20000, status: '지급 실패' },
-  6: { login: 'test', type: '출금', amount: 20000, status: '지급 실패' },
-  5: { login: 'test', type: '입금', amount: 20000, status: '거절' },
-  4: { login: 'test', type: '입금', amount: 10000, status: '승인' },
-  3: { login: 'test', type: '입금', amount: 10000, status: '거절' },
-  2: { login: 'test', type: '입금', amount: 10000, status: '거절' },
+  9: { login: 'yoonah', type: '입금', amount: 10000, status: '승인' },
+  8: { login: 'leesu', type: '출금', amount: 20000, status: '지급 실패' },
+  7: { login: 'leesu', type: '출금', amount: 20000, status: '지급 실패' },
+  6: { login: 'leesu', type: '출금', amount: 20000, status: '지급 실패' },
+  5: { login: 'leesu', type: '입금', amount: 20000, status: '거절' },
+  4: { login: 'leesu', type: '입금', amount: 10000, status: '승인' },
+  3: { login: 'leesu', type: '입금', amount: 10000, status: '거절' },
+  2: { login: 'leesu', type: '입금', amount: 10000, status: '거절' },
   1: { login: 'admin', type: '입금', amount: 10000, status: '거절' },
 }
 
@@ -185,9 +300,9 @@ function store() {
   data.distSettles ||= []
   if (data.distBalance == null && !Array.isArray(data.distSettles)) data.distBalance = 48200
   data.boardPosts ||= [
-    { board: '1', title: '준플레이오프 안내 (t)', body: '10월 20일 KIA 대 LG 3차전 일정이 잡혀 있습니다. 시작 시각은 아직 비어 있습니다. (t)' },
-    { board: '2', title: '입금 반영 안내 (t)', body: '승인된 입금은 회원 머니와 머니 내역에 같이 반영됩니다. (t)' },
-    { board: '3', title: '광주 2차전 (t)', body: 'LG 3:6 KIA로 끝났고, 시리즈는 KIA가 2승입니다. (t)' },
+    { board: '1', title: '준플레이오프 안내', body: '10월 20일 KIA 대 LG 3차전 일정이 잡혀 있습니다. 시작 시각은 아직 비어 있습니다.' },
+    { board: '2', title: '입금 반영 안내', body: '승인된 입금은 회원 머니와 머니 내역에 같이 반영됩니다.' },
+    { board: '3', title: '광주 2차전', body: 'LG 3:6 KIA로 끝났고, 시리즈는 KIA가 2승입니다.' },
   ]
   data.nextId ||= 100
   let migrated = false
@@ -208,8 +323,8 @@ function store() {
     }))
     if (!data.inquiries.length) {
       data.inquiries = [
-        { id: 't-inq-1', title: '입금 미반영 문의 (t)', body: '오전에 입금했는데 아직 안 들어왔습니다. (t)', status: '대기', answer: '' },
-        { id: 't-inq-2', title: '출금 지연 문의 (t)', body: '출금 심사 상태입니다. (t)', status: '답변', answer: '심사 후 지급 예정입니다. (t)' },
+        { id: 'inq-1', title: '입금 미반영 문의', body: '오전에 입금했는데 아직 안 들어왔습니다.', status: '대기', answer: '' },
+        { id: 'inq-2', title: '출금 지연 문의', body: '출금 심사 상태입니다.', status: '답변', answer: '심사 후 지급 예정입니다.' },
       ]
     } else {
       data.inquiries = data.inquiries.map((item) => ({
@@ -221,41 +336,41 @@ function store() {
     }
     if (!data.banners.length) {
       data.banners = [
-        { title: '첫 입금 이벤트 (t)', on: true },
-        { title: '주말 보너스 (t)', on: false },
+        { title: '첫 입금 이벤트', on: true },
+        { title: '주말 보너스', on: false },
       ]
     } else {
       data.banners = data.banners.map((item) => ({ ...item, title: testTag(item.title) }))
     }
     if (!data.messages.length) {
       data.messages = [
-        { title: '입금 안내 (t)', body: '최소 입금은 1만원입니다. (t)', read: false, at: now },
-        { title: '이벤트 공지 (t)', body: '주말 보너스가 진행 중입니다. (t)', read: true, at: now },
+        { title: '입금 안내', body: '최소 입금은 1만원입니다.', read: false, at: now },
+        { title: '이벤트 공지', body: '주말 보너스가 진행 중입니다.', read: true, at: now },
       ]
     } else {
       data.messages = data.messages.map((item) => ({ ...item, title: testTag(item.title), body: testTag(item.body) }))
     }
     if (!data.logs.length) {
       data.logs = [
-        { at: now, text: '테스트 관리자 로그인 (t)' },
-        { at: now, text: '테스트 입금 승인 처리 (t)' },
-        { at: now, text: '테스트 배너 노출 변경 (t)' },
+        { at: now, text: '관리자 로그인' },
+        { at: now, text: '입금 승인 처리' },
+        { at: now, text: '배너 노출 변경' },
       ]
     } else {
       data.logs = data.logs.map((item) => ({ ...item, text: testTag(item.text) }))
     }
     if (!data.pointMoves.length) {
       data.pointMoves = [
-        { login: 'test', amount: 1000, at: now, reason: '지급' },
-        { login: 'test123', amount: 500, at: now, reason: '지급' },
-        { login: 'user05', amount: 50, at: now, reason: '지급' },
+        { login: 'leesu', amount: 1000, at: now, reason: '지급' },
+        { login: 'yoonah', amount: 500, at: now, reason: '지급' },
+        { login: 'seojw', amount: 50, at: now, reason: '지급' },
       ]
     }
     if (!data.cashExtra.length) {
       data.cashExtra = [
-        { id: 't-cash-1', login: 'test', nick: '테스트유저 (t)', type: '입금', amount: 50000, status: '승인', memo: '계좌이체 (t)', requestedAt: now, processedAt: now },
-        { id: 't-cash-2', login: 'test123', nick: '테스트용 (t)', type: '출금', amount: 20000, status: '대기', memo: 'USDT (t)', requestedAt: now },
-        { id: 't-cash-3', login: 'user03', nick: '회원03 (t)', type: '입금', amount: 30000, status: '승인', memo: 'P2P (t)', requestedAt: now, processedAt: now },
+        { id: 'cash-1', login: 'leesu', nick: '이수민', type: '입금', amount: 50000, status: '승인', memo: '계좌이체', requestedAt: now, processedAt: now },
+        { id: 'cash-2', login: 'yoonah', nick: '윤아현', type: '출금', amount: 20000, status: '대기', memo: 'USDT', requestedAt: now },
+        { id: 'cash-3', login: 'kangst', nick: '강서준', type: '입금', amount: 30000, status: '승인', memo: 'P2P', requestedAt: now, processedAt: now },
       ]
     } else {
       data.cashExtra = data.cashExtra.map((item) => ({
@@ -266,28 +381,28 @@ function store() {
     }
     if (!data.casinoVisits.length) {
       data.casinoVisits = [
-        { name: '에볼루션 (t)', at: now },
-        { name: '프라그마틱 (t)', at: now },
-        { name: '파워볼 (t)', at: now },
+        { name: '에볼루션', at: now },
+        { name: '프라그마틱', at: now },
+        { name: '파워볼', at: now },
       ]
     } else {
       data.casinoVisits = data.casinoVisits.map((item) => ({ ...item, name: testTag(item.name) }))
     }
     if (!data.casinoBets.length) {
       data.casinoBets = [
-        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)', kind: 'live' },
-        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)', kind: 'other' },
-        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛 (t)', kind: 'live' },
-        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
-        { login: 'test123', nick: '테스트용 (t)', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯 (t)', kind: 'slot' },
+        { login: 'leesu', nick: '이수민', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라', kind: 'live' },
+        { login: 'yoonah', nick: '윤아현', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯', kind: 'slot' },
+        { login: 'leesu', nick: '이수민', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼', kind: 'other' },
+        { login: 'kangst', nick: '강서준', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라', kind: 'live' },
+        { login: 'leesu', nick: '이수민', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛', kind: 'live' },
+        { login: 'seojw', nick: '서준우', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯', kind: 'slot' },
+        { login: 'yoonah', nick: '윤아현', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯', kind: 'slot' },
       ]
     }
     if (!data.distSettles.length) {
       data.distSettles = [
-        { when: now, accrued: 12000, balance: 48200, line: 'A라인 (t)' },
-        { when: now, accrued: 8000, balance: 36000, line: 'B라인 (t)' },
+        { when: now, accrued: 12000, balance: 48200, line: '강남라인' },
+        { when: now, accrued: 8000, balance: 36000, line: '부산라인' },
       ]
       if (data.distBalance == null) data.distBalance = 48200
     }
@@ -295,20 +410,20 @@ function store() {
     migrated = true
   }
   if (data.riskSeedApplied !== 1) {
-    data.matchStatus['맨체스터 시티 vs 아스널 (t)'] = '라이브'
+    data.matchStatus['리버풀 vs 첼시'] = '라이브'
     data.riskSeedApplied = 1
     migrated = true
   }
   if (data.casinoMemberSeed !== 1) {
     if (!(data.casinoBets || []).every((bet) => bet.login)) {
       data.casinoBets = [
-        { login: 'test', nick: '테스트유저 (t)', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라 (t)', kind: 'live' },
-        { login: 'test123', nick: '테스트용 (t)', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼 (t)', kind: 'other' },
-        { login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live' },
-        { login: 'test', nick: '테스트유저 (t)', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛 (t)', kind: 'live' },
-        { login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot' },
-        { login: 'test123', nick: '테스트용 (t)', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯 (t)', kind: 'slot' },
+        { login: 'leesu', nick: '이수민', status: '적중', stake: 10000, payout: 19500, name: '에볼루션 바카라', kind: 'live' },
+        { login: 'yoonah', nick: '윤아현', status: '미적중', stake: 5000, payout: 0, name: '프라그마틱 슬롯', kind: 'slot' },
+        { login: 'leesu', nick: '이수민', status: '진행 중', stake: 8000, payout: 16000, name: '파워볼', kind: 'other' },
+        { login: 'kangst', nick: '강서준', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라', kind: 'live' },
+        { login: 'leesu', nick: '이수민', status: '진행 중', stake: 15000, payout: 30000, name: '에볼루션 룰렛', kind: 'live' },
+        { login: 'seojw', nick: '서준우', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯', kind: 'slot' },
+        { login: 'yoonah', nick: '윤아현', status: '진행 중', stake: 7000, payout: 14000, name: '스위트 보난자 슬롯', kind: 'slot' },
       ]
     }
     data.casinoMemberSeed = 1
@@ -324,12 +439,12 @@ function store() {
     )
     if (!openKinds.has('live')) {
       data.casinoBets.push({
-        login: 'user03', nick: '회원03 (t)', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라 (t)', kind: 'live',
+        login: 'kangst', nick: '강서준', status: '진행 중', stake: 12000, payout: 24000, name: '에볼루션 바카라', kind: 'live',
       })
     }
     if (!openKinds.has('slot')) {
       data.casinoBets.push({
-        login: 'user05', nick: '회원05 (t)', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯 (t)', kind: 'slot',
+        login: 'seojw', nick: '서준우', status: '진행 중', stake: 5000, payout: 9500, name: '프라그마틱 슬롯', kind: 'slot',
       })
     }
     data.casinoKindSeed = 1
@@ -1056,28 +1171,28 @@ function paintSettleSamples() {
     { label: 'J라인', value: 7000, sub: '1건' },
   ])
   paintSettleSampleRows('적자 회원', [
-    { label: '테스트유저 (test)', value: 61424, sub: '' },
-    { label: '테스트용 (test123)', value: 22000, sub: '' },
-    { label: '회원03 (user03)', value: 18500, sub: '' },
-    { label: '회원04 (user04)', value: 16200, sub: '' },
-    { label: '회원05 (user05)', value: 14800, sub: '' },
-    { label: '회원06 (user06)', value: 12100, sub: '' },
-    { label: '회원07 (user07)', value: 9800, sub: '' },
-    { label: '회원08 (user08)', value: 8600, sub: '' },
-    { label: '회원09 (user09)', value: 7200, sub: '' },
-    { label: '회원10 (user10)', value: 5400, sub: '' },
+    { label: '이수민 (leesu)', value: 61424, sub: '' },
+    { label: '윤아현 (yoonah)', value: 22000, sub: '' },
+    { label: '강서준 (kangst)', value: 18500, sub: '' },
+    { label: '한소연 (hansy)', value: 16200, sub: '' },
+    { label: '서준우 (seojw)', value: 14800, sub: '' },
+    { label: '황서연 (hwangsy)', value: 12100, sub: '' },
+    { label: '안지훈 (anjw)', value: 9800, sub: '' },
+    { label: '문하윤 (moonhy)', value: 8600, sub: '' },
+    { label: '이재호 (jaeho)', value: 7200, sub: '' },
+    { label: '박도현 (parkdh)', value: 5400, sub: '' },
   ])
   paintSettleSampleRows('흑자 회원', [
-    { label: '테스트유저 (test)', value: 10000, sub: '' },
+    { label: '김지성 (kimjs)', value: 10000, sub: '' },
     { label: '관리자 (admin)', value: 5000, sub: '' },
-    { label: '회원03 (user03)', value: 4600, sub: '' },
-    { label: '회원04 (user04)', value: 4200, sub: '' },
-    { label: '회원05 (user05)', value: 3900, sub: '' },
-    { label: '회원06 (user06)', value: 3500, sub: '' },
-    { label: '회원07 (user07)', value: 3100, sub: '' },
-    { label: '회원08 (user08)', value: 2700, sub: '' },
-    { label: '회원09 (user09)', value: 2300, sub: '' },
-    { label: '회원10 (user10)', value: 1900, sub: '' },
+    { label: '강서준 (kangst)', value: 4600, sub: '' },
+    { label: '한소연 (hansy)', value: 4200, sub: '' },
+    { label: '서준우 (seojw)', value: 3900, sub: '' },
+    { label: '황서연 (hwangsy)', value: 3500, sub: '' },
+    { label: '안지훈 (anjw)', value: 3100, sub: '' },
+    { label: '문하윤 (moonhy)', value: 2700, sub: '' },
+    { label: '이재호 (jaeho)', value: 2300, sub: '' },
+    { label: '박도현 (parkdh)', value: 1900, sub: '' },
   ])
 }
 
@@ -1586,7 +1701,7 @@ function paintLinked() {
   paintFlowZone('out', withdraws, true)
   setLabel('총 회원', countText(Object.keys(data.users).length, '명'))
   ensureRiskSummaryCards()
-  paintRiskSummary(open, liveNames)
+  paintRiskSummary()
   setCountLabel('총 베팅액', period.count, period.stake)
   setCountLabel('적중 지급액', period.count, period.payout)
   setCountLabel('미확정 베팅', open.length, openStake)
@@ -1604,7 +1719,7 @@ function paintLinked() {
     })
   })
   const balanceLine = [...root.querySelectorAll('p')].find((item) => item.textContent.includes('머니') && item.textContent.includes('포인트'))
-  if (balanceLine && data.users.test) balanceLine.textContent = `머니 ${num(data.users.test.money)} · 포인트 ${num(data.users.test.points)}P`
+  if (balanceLine && data.users.leesu) balanceLine.textContent = `머니 ${num(data.users.leesu.money)} · 포인트 ${num(data.users.leesu.points)}P`
   root.querySelectorAll('[data-linked-row]').forEach((row) => row.remove())
   const tx = [...root.querySelectorAll('table')].find((table) => (table.tHead?.innerText || '').includes('거래 후 머니'))
   if (tx?.tBodies[0]) {
@@ -1695,30 +1810,10 @@ function centerTables() {
   alignMatchColumns(document.querySelector('[data-lower-board]'))
 }
 
-function stampDemoMarks(root = document) {
-  const pairs = [
-    ['테스트유저', '테스트유저 (t)'],
-    ['테스트용', '테스트용 (t)'],
-    ['회원03', '회원03 (t)'],
-    ['회원04', '회원04 (t)'],
-    ['회원05', '회원05 (t)'],
-  ]
-  const walker = document.createTreeWalker(root.body || root, NodeFilter.SHOW_TEXT)
-  const nodes = []
-  while (walker.nextNode()) nodes.push(walker.currentNode)
-  nodes.forEach((node) => {
-    if (node.parentElement?.closest('script, style, textarea, input, select')) return
-    let text = node.textContent
-    let next = text
-    for (const [from, to] of pairs) {
-      if (!next.includes(from) || next.includes(to)) continue
-      next = next.split(from).join(to)
-    }
-    if (next !== text) node.textContent = next
-  })
-}
+function stampDemoMarks() {}
 
 function refreshTables() {
+  if (document.getElementById('bet-history-root')) return
   paintLinked()
   document.querySelectorAll('main table').forEach((table) => applyTable(table, 0))
   centerTables()
@@ -1927,7 +2022,7 @@ function realRows(games) {
 }
 
 function realBoard(title, games) {
-  return panel(title, `<p class="text-xs text-muted">2026년 10월 KBO 포스트시즌과 MLB 리그 챔피언십 발표 일정·결과입니다. 테스트 항목에는 (t)가 붙습니다.</p>${tableWrap(['리그', '시각', '경기', '스코어', '내용', '상태'], [realRows(games)])}`)
+  return panel(title, `<p class="text-xs text-muted">2026년 10월 KBO 포스트시즌과 MLB 리그 챔피언십 발표 일정·결과입니다.</p>${tableWrap(['리그', '시각', '경기', '스코어', '내용', '상태'], [realRows(games)])}`)
 }
 
 function sectionOf(title) {
@@ -2080,24 +2175,8 @@ function byIncoming(rows) {
   return [...rows].sort((a, b) => b.count - a.count || b.stake - a.stake)
 }
 
-const HOT_PAD_ROWS = [
-  { match: 'LA 다저스 vs 샌디에이고 파드리스 (t)', league: 'MLB (t)', sport: '야구 (t)', market: '승무패 (t)', line: '승', when: '일반 (t)', count: 3, stake: 18000, payout: 32400, risk: 14400 },
-  { match: '맨체스터 시티 vs 아스널 (t)', league: 'EPL (t)', sport: '축구 (t)', market: '핸디캡 (t)', line: '-0.5', when: '실시간 (t)', count: 2, stake: 15000, payout: 25500, risk: 10500 },
-  { match: '보스턴 셀틱스 vs 뉴욕 닉스 (t)', league: 'NBA (t)', sport: '농구 (t)', market: '언더오버 (t)', line: '215.5', when: '일반 (t)', count: 2, stake: 12000, payout: 21600, risk: 9600 },
-  { match: '토트넘 vs 첼시 (t)', league: 'EPL (t)', sport: '축구 (t)', market: '승무패 (t)', line: '무', when: '일반 (t)', count: 1, stake: 9000, payout: 19800, risk: 10800 },
-  { match: 'LA 레이커스 vs 골든스테이트 (t)', league: 'NBA (t)', sport: '농구 (t)', market: '핸디캡 (t)', line: '+3.5', when: '실시간 (t)', count: 1, stake: 8000, payout: 15200, risk: 7200 },
-]
-
 function padHotRows(rows, limit = 5) {
-  const list = [...rows]
-  const used = new Set(list.map((row) => row.match))
-  for (const sample of HOT_PAD_ROWS) {
-    if (list.length >= limit) break
-    if (used.has(sample.match)) continue
-    list.push({ ...sample })
-    used.add(sample.match)
-  }
-  return list.slice(0, limit)
+  return [...rows].slice(0, limit)
 }
 
 const MATCH_FACE = new Map()
@@ -2373,10 +2452,283 @@ function casinoKindOf(bet) {
   return 'other'
 }
 
+function riskApiWatchLines() {
+  return (window.__riskApi?.matches || []).map((m) => {
+    const parts = String(m.name || '').split(/\s+vs\s+/i)
+    return {
+      league: m.league || '',
+      sport: m.sport || '',
+      home: (parts[0] || m.name || '').trim(),
+      away: (parts[1] || '-').trim(),
+      match: m.name || '',
+      market: m.market || '',
+      when: m.live ? '실시간' : '일반',
+      count: Number(m.betCount || m.count || 0),
+      stake: Number(m.stake || 0),
+      risk: Number(m.maxLoss || m.risk || 0),
+    }
+  })
+}
+
+function showRiskLoadError(on) {
+  if (!location.pathname.endsWith('/risk.html')) return
+  const stack = document.querySelector('main > .space-y-4')
+  if (!stack) return
+  let bar = stack.querySelector('[data-risk-error]')
+  if (!bar) {
+    bar = document.createElement('div')
+    bar.dataset.riskError = '1'
+    bar.className = 'rounded-xl border border-danger bg-danger-soft px-4 py-3 text-center text-sm font-bold text-danger'
+    bar.textContent = '데이터를 불러오지 못했습니다'
+    stack.prepend(bar)
+  }
+  bar.hidden = !on
+}
+
+async function fetchRiskJson(path) {
+  const res = await fetch(path, { credentials: 'include' })
+  if (redirectIfAuthLost(res)) throw new Error('auth')
+  if (!res.ok) throw new Error(`${path} ${res.status}`)
+  return res.json()
+}
+
+function ensureRiskMemberHost() {
+  const section = [...document.querySelectorAll('main h2')]
+    .find((item) => item.textContent.includes('회원별 리스크'))
+    ?.closest('section')
+  if (!section) return null
+  const title = section.querySelector('h2')
+  const titleBox = title?.parentElement
+  const titleRow = titleBox?.parentElement
+  if (titleBox) {
+    titleBox.classList.add('w-full', 'text-center')
+    title?.classList.add('inline-flex', 'items-center', 'justify-center')
+  }
+  if (titleRow) {
+    titleRow.classList.remove('justify-between', 'items-end')
+    titleRow.classList.add('w-full')
+  }
+  const empty = [...section.children].find((node) => node.tagName === 'DIV' && /없습니다/.test(node.textContent || ''))
+  let host = section.querySelector('[data-risk-members]')
+  if (!host) {
+    host = document.createElement('div')
+    host.dataset.riskMembers = '1'
+    host.className = 'overflow-x-auto'
+    const table = document.createElement('table')
+    table.className = 'w-full border-collapse text-[13px]'
+    table.append(document.createElement('thead'), document.createElement('tbody'))
+    host.append(table)
+    if (empty) empty.replaceWith(host)
+    else section.append(host)
+  }
+  return section
+}
+
+function paintRiskAlerts(alerts) {
+  const stack = document.querySelector('main > .space-y-4')
+  if (!stack) return
+  let section = stack.querySelector('[data-risk-alerts]')
+  if (!section) {
+    section = document.createElement('section')
+    section.dataset.riskAlerts = '1'
+    section.className = 'space-y-3'
+    const heading = document.createElement('h2')
+    heading.className = 'text-base font-black text-fg text-center'
+    heading.textContent = '리스크 알림'
+    const host = document.createElement('div')
+    host.className = 'overflow-x-auto'
+    const table = document.createElement('table')
+    table.className = 'w-full border-collapse text-[13px]'
+    table.append(document.createElement('thead'), document.createElement('tbody'))
+    host.append(table)
+    section.append(heading, host)
+    const member = [...stack.querySelectorAll('section')].find((item) =>
+      item.querySelector('h2')?.textContent.includes('회원별 리스크'),
+    )
+    if (member) member.after(section)
+    else stack.append(section)
+  }
+  const table = section.querySelector('table')
+  const head = table?.tHead
+  const body = table?.tBodies[0]
+  if (!head || !body) return
+  const headers = ['번호', '종류', '심각도', '내용', '확인']
+  head.replaceChildren((() => {
+    const row = document.createElement('tr')
+    headers.forEach((label) => {
+      const cell = document.createElement('th')
+      cell.textContent = label
+      row.append(cell)
+    })
+    return row
+  })())
+  if (window.__riskApiError) {
+    const row = document.createElement('tr')
+    const cell = document.createElement('td')
+    cell.colSpan = headers.length
+    cell.textContent = '데이터를 불러오지 못했습니다'
+    row.append(cell)
+    body.replaceChildren(row)
+    return
+  }
+  const rows = Array.isArray(alerts) ? alerts : []
+  if (!rows.length) {
+    const row = document.createElement('tr')
+    const cell = document.createElement('td')
+    cell.colSpan = headers.length
+    cell.textContent = '알림이 없습니다.'
+    row.append(cell)
+    body.replaceChildren(row)
+    return
+  }
+  body.replaceChildren(...rows.map((item) => {
+    const tr = document.createElement('tr')
+    ;[item.id, item.kind, item.severity, item.message, item.acked ? '확인' : '미확인'].forEach((value) => {
+      const cell = document.createElement('td')
+      cell.textContent = String(value ?? '')
+      tr.append(cell)
+    })
+    return tr
+  }))
+}
+
+function paintRiskFromApi() {
+  const api = window.__riskApi
+  if (!location.pathname.endsWith('/risk.html')) return
+  ensureRiskSummaryCards()
+  reshapeRisk()
+  paintRiskSummaryFromApi()
+  const board = document.querySelector('[data-risk-board="watch8"]')
+  const lines = riskApiWatchLines()
+  if (board) {
+    bindRiskWatchFilters(board)
+    paintRiskWatchFilters(board)
+    if (window.__riskApiError) {
+      const table = board.querySelector('[data-risk-watch] table')
+      const body = table?.tBodies[0]
+      if (body) {
+        const row = document.createElement('tr')
+        const cell = document.createElement('td')
+        cell.colSpan = 9
+        cell.textContent = '데이터를 불러오지 못했습니다'
+        row.append(cell)
+        body.replaceChildren(row)
+      }
+    } else {
+      const sports = riskParsePicks(board.dataset.riskSport)
+      const markets = riskParsePicks(board.dataset.riskMarket)
+      const whens = riskParsePicks(board.dataset.riskWhen)
+      const q = (board.dataset.riskQ || '').toLowerCase()
+      const sort = board.dataset.riskSort || 'risk'
+      let filtered = lines.slice()
+      if (sports.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.sport, sports, 'sport'))
+      if (markets.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.market, markets, 'market'))
+      if (whens.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.when, whens, 'when'))
+      if (q) {
+        filtered = filtered.filter((row) =>
+          [row.league, row.sport, row.home, row.away, row.match, row.market, row.when]
+            .join(' ')
+            .toLowerCase()
+            .includes(q))
+      }
+      filtered.sort((a, b) => {
+        if (sort === 'stake') return b.stake - a.stake || b.risk - a.risk
+        if (sort === 'count') return b.count - a.count || b.risk - a.risk
+        return b.risk - a.risk || b.stake - a.stake
+      })
+      paintRiskWatchTable(board, filtered)
+    }
+  }
+  const memberSection = ensureRiskMemberHost()
+  if (memberSection) {
+    if (window.__riskApiError) {
+      fillRiskMemberTable(memberSection, [])
+      const empty = memberSection.querySelector('[data-risk-members] td')
+      if (empty) empty.textContent = '데이터를 불러오지 못했습니다'
+    } else {
+      const linesMembers = (api?.members || []).map((u) => [
+        `${u.nick || u.login}(${u.login})`,
+        `${Number(u.sportCount || 0)}건`,
+        riskMoney(u.sportStake || 0),
+        riskMoney(u.sportRisk || 0),
+        riskMoney(u.money || 0),
+        `${Number(u.casinoCount || 0)}건`,
+        riskMoney(u.casinoStake || 0),
+        riskMoney(u.casinoRisk || 0),
+        riskMoney(u.money || 0),
+      ])
+      fillRiskMemberTable(memberSection, linesMembers)
+    }
+  }
+  paintRiskAlerts(api?.alerts || [])
+  const refreshed = [...document.querySelectorAll('main span')].find((node) =>
+    /^갱신\s/.test(node.textContent.trim()),
+  )
+  if (refreshed) refreshed.textContent = window.__riskApiError ? '갱신 실패' : `갱신 ${stamp()} · API`
+}
+
+function paintRiskSummaryFromApi() {
+  if (!location.pathname.endsWith('/risk.html')) return
+  tintRiskBetZones()
+  const api = window.__riskApi
+  if (!api?.summary) return
+  setLabel('미확정 리스크 금액', num(api.summary.maxRisk || 0))
+  setLabel('진행 중인 라이브 경기 수', countText(api.summary.liveMatches || 0, '건'))
+  const liveSection = document.querySelector('[data-risk-zones] [data-tone="live"]')
+  const normalSection = document.querySelector('[data-risk-zones] [data-tone="sport"]')
+  const liveCasinoSection = document.querySelector('[data-risk-zones] [data-tone="casino-live"]')
+  const slotSection = document.querySelector('[data-risk-zones] [data-tone="casino-slot"]')
+  setLabelIn(liveSection, '건수', countText(api.summary.liveBets?.count || 0, '건'))
+  setLabelIn(liveSection, '금액', wonText(api.summary.liveBets?.stake || 0))
+  setLabelIn(normalSection, '건수', countText(api.summary.prematchBets?.count || 0, '건'))
+  setLabelIn(normalSection, '금액', wonText(api.summary.prematchBets?.stake || 0))
+  setLabelIn(liveCasinoSection, '건수', countText(api.summary.casinoLive?.count || 0, '건'))
+  setLabelIn(liveCasinoSection, '금액', wonText(api.summary.casinoLive?.stake || 0))
+  setLabelIn(slotSection, '건수', countText(api.summary.casinoSlot?.count || 0, '건'))
+  setLabelIn(slotSection, '금액', wonText(api.summary.casinoSlot?.stake || 0))
+}
+
+async function hydrateRiskFromApi() {
+  if (!location.pathname.endsWith('/risk.html')) return
+  try {
+    const [summary, matches, members, alerts] = await Promise.all([
+      fetchRiskJson('/api/risk/summary'),
+      fetchRiskJson('/api/risk/matches?limit=50'),
+      fetchRiskJson('/api/risk/members?limit=50'),
+      fetchRiskJson('/api/risk/alerts'),
+    ])
+    window.__riskApiError = false
+    window.__riskApi = {
+      summary,
+      matches: matches.items || [],
+      members: members.items || [],
+      alerts: Array.isArray(alerts) ? alerts : [],
+      fetchedAt: Date.now(),
+    }
+    showRiskLoadError(false)
+    paintRiskFromApi()
+    if (!window.__riskSse) {
+      window.__riskSse = new EventSource('/api/risk/stream')
+      window.__riskSse.onmessage = () => {
+        hydrateRiskFromApi()
+      }
+    }
+  } catch (err) {
+    window.__riskApiError = true
+    window.__riskApi = window.__riskApi || { summary: null, matches: [], members: [], alerts: [] }
+    showRiskLoadError(true)
+    paintRiskFromApi()
+    console.warn('risk api hydrate failed', err)
+  }
+}
+
 function ensureRiskSummaryCards() {
   if (!location.pathname.endsWith('/risk.html')) return
   const ready = document.querySelector('[data-risk-summary][data-risk-ready="3"]')
-  if (ready?.querySelector('[data-risk-zones]') && ready.textContent.includes('진행 중 배팅 ( 라이브 카지노 )')) return
+  if (ready?.querySelector('[data-risk-zones]') && ready.textContent.includes('진행 중 배팅 ( 라이브 카지노 )')) {
+    hydrateRiskFromApi()
+    return
+  }
   document.querySelectorAll('[data-risk-summary]').forEach((node) => node.remove())
   const grid = [...document.querySelectorAll('main .grid')].find((node) =>
     [...node.querySelectorAll('p,div')].some((item) => /미확정 리스크 금액|전체 최대 잠재손실|위험 경기|위험 건수|진행 중 배팅/.test(item.textContent || '')),
@@ -2412,6 +2764,7 @@ function ensureRiskSummaryCards() {
   wrap.append(top, zones)
   grid.replaceWith(wrap)
   tintRiskBetZones()
+  hydrateRiskFromApi()
 }
 
 function tintRiskBetZones() {
@@ -2429,31 +2782,10 @@ function tintRiskBetZones() {
   })
 }
 
-function paintRiskSummary(open, liveNames) {
+function paintRiskSummary() {
   if (!location.pathname.endsWith('/risk.html')) return
   ensureRiskSummaryCards()
-  tintRiskBetZones()
-  const liveBets = open.filter((bet) => marketOf(bet[4], bet[2]).when === '실시간')
-  const normalBets = open.filter((bet) => marketOf(bet[4], bet[2]).when !== '실시간')
-  const stakeSum = (rows) => rows.reduce((sum, bet) => sum + Number(bet[3] || 0), 0)
-  const casinoStakeSum = (rows) => rows.reduce((sum, bet) => sum + Number(bet.stake || 0), 0)
-  const openCasino = (store().casinoBets || []).filter((bet) => bet.status === '진행 중')
-  const liveCasino = openCasino.filter((bet) => casinoKindOf(bet) === 'live')
-  const slotCasino = openCasino.filter((bet) => casinoKindOf(bet) === 'slot')
-  setLabel('미확정 리스크 금액', num(open.reduce((sum, bet) => sum + Math.max(0, Number(bet[5]) - Number(bet[3])), 0)))
-  setLabel('진행 중인 라이브 경기 수', countText(liveNames.length, '건'))
-  const liveSection = document.querySelector('[data-risk-zones] [data-tone="live"]')
-  const normalSection = document.querySelector('[data-risk-zones] [data-tone="sport"]')
-  const liveCasinoSection = document.querySelector('[data-risk-zones] [data-tone="casino-live"]')
-  const slotSection = document.querySelector('[data-risk-zones] [data-tone="casino-slot"]')
-  setLabelIn(liveSection, '건수', countText(liveBets.length, '건'))
-  setLabelIn(liveSection, '금액', wonText(stakeSum(liveBets)))
-  setLabelIn(normalSection, '건수', countText(normalBets.length, '건'))
-  setLabelIn(normalSection, '금액', wonText(stakeSum(normalBets)))
-  setLabelIn(liveCasinoSection, '건수', countText(liveCasino.length, '건'))
-  setLabelIn(liveCasinoSection, '금액', wonText(casinoStakeSum(liveCasino)))
-  setLabelIn(slotSection, '건수', countText(slotCasino.length, '건'))
-  setLabelIn(slotSection, '금액', wonText(casinoStakeSum(slotCasino)))
+  if (window.__riskApi) paintRiskSummaryFromApi()
 }
 
 function makeRiskChip(label, on, attrs = {}) {
@@ -2469,9 +2801,9 @@ function makeRiskChip(label, on, attrs = {}) {
   return button
 }
 
-// NEX 원본 사이드바 종목 (risk_files i18n)
+// 원본 사이드바 종목 (risk_files i18n)
 const RISK_SPORTS = ['축구', '농구', '야구', '배구', '아이스하키', '테니스', 'e스포츠']
-// NEX 원본 마켓 카탈로그 labels (risk_files market defs)
+// 원본 마켓 카탈로그 labels (risk_files market defs)
 const RISK_MARKETS = [
   '승무패', '머니라인', '오버언더', '핸디캡', '경기승자', '양팀득점',
   '홈팀 오버언더', '원정팀 오버언더', '코너킥 오버언더', '코너킥 핸디캡',
@@ -2939,7 +3271,7 @@ function bindRiskWatchFilters(board) {
         closeRiskFilterCard(board)
         return
       }
-      const lines = riskWatchLines(openRiskRows(store()))
+      const lines = riskApiWatchLines()
       openRiskFilterCard(board, dim, lines)
       return
     }
@@ -3050,40 +3382,14 @@ function paintRiskWatchFilters(board) {
   })
 }
 
-function paintRiskMonitor(data = store()) {
+function paintRiskMonitor() {
   if (!location.pathname.endsWith('/risk.html')) return
   reshapeRisk()
-  const board = document.querySelector('[data-risk-board="watch8"]')
-  if (!board) return
-  bindRiskWatchFilters(board)
-  const rows = openRiskRows(data)
-  const lines = riskWatchLines(rows)
-  paintRiskWatchFilters(board)
-  const sports = riskParsePicks(board.dataset.riskSport)
-  const markets = riskParsePicks(board.dataset.riskMarket)
-  const whens = riskParsePicks(board.dataset.riskWhen)
-  const q = (board.dataset.riskQ || '').toLowerCase()
-  const sort = board.dataset.riskSort || 'risk'
-  let filtered = lines.slice()
-  if (sports.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.sport, sports, 'sport'))
-  if (markets.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.market, markets, 'market'))
-  if (whens.length) filtered = filtered.filter((row) => riskRowMatchesPicks(row.when, whens, 'when'))
-  if (q) {
-    filtered = filtered.filter((row) =>
-      [row.league, row.sport, row.home, row.away, row.match, row.market, row.when]
-        .join(' ')
-        .toLowerCase()
-        .includes(q))
+  if (window.__riskApi || window.__riskApiError) {
+    paintRiskFromApi()
+    return
   }
-  filtered.sort((a, b) => {
-    if (sort === 'stake') return b.stake - a.stake || b.risk - a.risk
-    if (sort === 'count') return b.count - a.count || b.risk - a.risk
-    return b.risk - a.risk || b.stake - a.stake
-  })
-  paintRiskWatchTable(board, filtered)
-  paintRiskMembers(data, rows)
-  const refreshed = [...document.querySelectorAll('main span')].find((node) => /^갱신\s/.test(node.textContent.trim()))
-  if (refreshed) refreshed.textContent = `갱신 ${stamp()}`
+  hydrateRiskFromApi()
 }
 
 const REVIEW_REC = {
@@ -3111,9 +3417,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'void_review',
       flagged: true,
-      login: 'test',
-      nick: '테스트유저 (t)',
-      match: '밀워키 브루어스 vs 시카고 컵스',
+      login: 'leesu',
+      nick: '이수민',
+      match: '리버풀 vs 첼시',
       market: '핸디캡',
       selection: '-1.5',
       stake: 10000,
@@ -3136,9 +3442,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'weak_evidence',
       flagged: true,
-      login: 'test123',
-      nick: '테스트용 (t)',
-      match: '맨체스터 시티 vs 아스널 (t)',
+      login: 'yoonah',
+      nick: '윤아현',
+      match: '맨체스터 시티 vs 아스널',
       market: '핸디캡',
       selection: '-0.5',
       stake: 15000,
@@ -3161,9 +3467,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'ambiguous',
       flagged: true,
-      login: 'user03',
-      nick: '회원03 (t)',
-      match: '디트로이트 타이거스 vs 미네소타 트윈스',
+      login: 'kangst',
+      nick: '강서준',
+      match: '탬파베이 레이스 vs 클리블랜드 가디언스',
       market: '언더오버',
       selection: '8.5',
       stake: 7000,
@@ -3186,9 +3492,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'void_review',
       flagged: true,
-      login: 'user05',
-      nick: '회원05 (t)',
-      match: '토트넘 vs 첼시 (t)',
+      login: 'seojw',
+      nick: '서준우',
+      match: '토트넘 vs 아스널',
       market: '승무패',
       selection: '무',
       stake: 9000,
@@ -3211,9 +3517,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'not_won',
       flagged: true,
-      login: 'test',
-      nick: '테스트유저 (t)',
-      match: '시드니 올림픽 vs 시드니 유나이티드 58',
+      login: 'leesu',
+      nick: '이수민',
+      match: '울산 HD vs 전북 현대',
       market: '언더오버',
       selection: '2.5',
       stake: 10000,
@@ -3236,9 +3542,9 @@ function buildReviewDemoFlags() {
     {
       recommendation: 'ambiguous',
       flagged: true,
-      login: 'user03',
-      nick: '회원03 (t)',
-      match: '보스턴 셀틱스 vs 뉴욕 닉스 (t)',
+      login: 'kangst',
+      nick: '강서준',
+      match: '보스턴 셀틱스 vs 뉴욕 닉스',
       market: '언더오버',
       selection: '215.5',
       stake: 12000,
@@ -3812,7 +4118,7 @@ function search(placeholder) {
 }
 
 function note() {
-  return `<p class="text-xs text-muted">저장된 원본 본문이 없어, 입출금·머니내역·정산 화면과 같은 목록 패턴으로 구성했습니다. 테스트 데이터에는 항상 (t)가 붙으며, 실제 연동 후 (t) 항목만 지우면 됩니다.</p>`
+  return `<p class="text-xs text-muted">저장된 원본 본문이 없어, 입출금·머니내역·정산 화면과 같은 목록 패턴으로 구성했습니다.</p>`
 }
 
 function matchCards(games) {
@@ -3856,7 +4162,7 @@ function markCart() {
 }
 
 function richPage(path, data) {
-  const user = data.users.test
+  const user = data.users.leesu
   if (path.endsWith('/users.html') || path.endsWith('/blacklist.html')) {
     const onlyBlocked = path.endsWith('/blacklist.html')
     const people = Object.entries(data.users).filter(([, item]) => (onlyBlocked ? item.blocked : true))
@@ -3888,7 +4194,7 @@ function richPage(path, data) {
   }
   if (path.endsWith('/points.html')) {
     const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(memberLabel(data.users[move.login]?.nick || move.login, move.login))}${cell(Number(move.amount) > 0 ? '지급' : '회수')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
-    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('test 포인트', user.points.toLocaleString('ko-KR') + 'P')}${stat('test123 포인트', data.users.test123.points.toLocaleString('ko-KR') + 'P')}</div>${panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'test', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form>${chips(['전체', '지급', '회수'])}${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`)}</div>`
+    return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-2">${stat('이수민 포인트', user.points.toLocaleString('ko-KR') + 'P')}${stat('윤아현 포인트', data.users.yoonah.points.toLocaleString('ko-KR') + 'P')}</div>${panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'leesu', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form>${chips(['전체', '지급', '회수'])}${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/logs.html')) {
     const rows = data.logs.map((item) => `<tr class="border-b border-edge-soft">${cell(item.at, 'text-muted')}${cell(item.text)}</tr>`).join('')
@@ -3922,8 +4228,8 @@ function richPage(path, data) {
     return `<div class="space-y-4">${note()}${panel(path.endsWith('/live.html') ? '예정 경기' : '전체 경기', matchCards(games))}</div>`
   }
   if (path.endsWith('/my-bets.html')) {
-    const placed = data.placedBets.filter((bet) => bet.login === 'test').map((bet) => `<tr class="border-b border-edge-soft">${cell(testTag(bet.match), 'font-bold')}${cell(testTag(bet.pick))}${cell(Number(bet.stake).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(String(bet.odds), 'text-right')}${cell(`<span class="${STATUS_CLASS[bet.status] || ''}">${bet.status}</span>`)}${cell(bet.at)}</tr>`)
-    const saved = BETS.filter((item) => item[0] === 'test').map((item) => {
+    const placed = data.placedBets.filter((bet) => bet.login === 'leesu').map((bet) => `<tr class="border-b border-edge-soft">${cell(testTag(bet.match), 'font-bold')}${cell(testTag(bet.pick))}${cell(Number(bet.stake).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(String(bet.odds), 'text-right')}${cell(`<span class="${STATUS_CLASS[bet.status] || ''}">${bet.status}</span>`)}${cell(bet.at)}</tr>`)
+    const saved = BETS.filter((item) => item[0] === 'leesu').map((item) => {
       const index = BETS.indexOf(item)
       const current = data.betStatus[index] || item[6]
       return `<tr class="border-b border-edge-soft">${cell(testTag(item[2]), 'font-bold')}${cell('-')}${cell(item[3].toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item[4], 'text-right')}${cell(`<span class="${STATUS_CLASS[current]}">${current}</span>`)}${cell('-')}</tr>`
@@ -3932,7 +4238,7 @@ function richPage(path, data) {
   }
   if (path.endsWith('/user-cash.html')) {
     const policy = data.settings['입출금 정책']?.['등급없음'] || []
-    const rows = data.cashExtra.filter((item) => item.login === 'test').map((item) => `<tr class="border-b border-edge-soft">${cell(item.type)}${cell(Number(item.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item.memo || '-')}${cell(`<span class="${STATUS_CLASS[item.status] || ''}">${item.status}</span>`)}${cell(item.requestedAt || '-')}</tr>`).join('')
+    const rows = data.cashExtra.filter((item) => item.login === 'leesu').map((item) => `<tr class="border-b border-edge-soft">${cell(item.type)}${cell(Number(item.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell(item.memo || '-')}${cell(`<span class="${STATUS_CLASS[item.status] || ''}">${item.status}</span>`)}${cell(item.requestedAt || '-')}</tr>`).join('')
     return `<div class="space-y-4">${note()}<div class="grid gap-3 sm:grid-cols-3">${stat('보유 머니', user.money.toLocaleString('ko-KR'))}${stat('최소 입금', Number(policy[0] ?? 10000).toLocaleString('ko-KR'))}${stat('1회 최대 출금', Number(policy[2] ?? 10000000).toLocaleString('ko-KR'))}</div>${panel('입출금', `${chips(['전체', '입금', '출금', '대기', '승인', '거절', '계좌', 'USDT'])}<form data-user-cash class="space-y-3"><select data-field="type" class="h-10 rounded-lg border border-edge bg-input px-3 text-sm font-bold"><option>입금</option><option>출금</option></select><div class="flex flex-wrap gap-1"><button type="button" data-preset="10000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">1만</button><button type="button" data-preset="50000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">5만</button><button type="button" data-preset="100000" class="rounded-md border border-edge px-3 py-1.5 text-xs font-bold">10만</button></div>${field('금액', '10000', 'amount', 'number')}${field('메모', '', 'memo')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">신청</button></form><p data-cash-result class="text-sm font-bold text-accent"></p>${tableWrap(['유형', '금액', '메모', '상태', '시각'], [rows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">신청 내역이 없습니다.</td></tr>'])}`)}</div>`
   }
   if (path.endsWith('/account.html')) {
@@ -3999,7 +4305,7 @@ function renderPlaceholder() {
   }
   if (path.endsWith('/points.html')) {
     const pointRows = data.pointMoves.map((move) => `<tr class="border-b border-edge-soft">${cell(memberLabel(data.users[move.login]?.nick || move.login, move.login))}${cell(move.reason || '지급')}${cell((move.amount > 0 ? '+' : '') + Number(move.amount).toLocaleString('ko-KR'), 'text-right font-bold')}${cell((data.users[move.login]?.points || 0).toLocaleString('ko-KR'), 'text-right')}${cell(move.at || '-')}</tr>`).join('')
-    replacePlaceholder(panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'test', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form><div class="text-sm text-dim">테스트유저 ${data.users.test.points.toLocaleString('ko-KR')}P · 테스트용 ${data.users.test123.points.toLocaleString('ko-KR')}P</div>${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`))
+    replacePlaceholder(panel('포인트 내역', `<form data-point-form class="flex flex-wrap items-end gap-2">${field('회원 아이디', 'leesu', 'login')}${field('포인트', '1000', 'amount', 'number')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">지급</button><button type="button" data-point-take class="h-10 rounded-lg border border-edge px-4 text-sm font-bold text-dim">회수</button></form><div class="text-sm text-dim">이수민 ${data.users.leesu.points.toLocaleString('ko-KR')}P · 윤아현 ${data.users.yoonah.points.toLocaleString('ko-KR')}P</div>${tableWrap(['닉네임(아이디)', '구분', '포인트', '잔액', '시각'], [pointRows || '<tr><td class="px-3 py-8 text-center text-sm text-dim" colspan="5">포인트 이동이 없습니다.</td></tr>'])}`))
     return true
   }
   if (path.endsWith('/logs.html')) {
@@ -4027,7 +4333,7 @@ function renderPlaceholder() {
     return true
   }
   if (path.endsWith('/home.html')) {
-    const user = data.users.test
+    const user = data.users.leesu
     replacePlaceholder(`<div class="space-y-4"><div class="grid gap-3 sm:grid-cols-3"><a class="rounded-xl border border-edge bg-card p-4" href="/nex/casino-live.html"><div class="text-xs text-muted">카지노</div><div class="mt-1 font-black">입장</div></a><a class="rounded-xl border border-edge bg-card p-4" href="/nex/my-bets.html"><div class="text-xs text-muted">베팅</div><div class="mt-1 font-black">${BETS.length}건</div></a><a class="rounded-xl border border-edge bg-card p-4" href="/nex/user-cash.html"><div class="text-xs text-muted">보유 머니</div><div class="mt-1 font-black text-accent">${user.money.toLocaleString('ko-KR')}</div></a></div>${realBoard('실제 경기', REAL_GAMES.slice(0, 5))}</div>`)
     return true
   }
@@ -4037,12 +4343,12 @@ function renderPlaceholder() {
     return true
   }
   if (path.endsWith('/user-cash.html')) {
-    const user = data.users.test
+    const user = data.users.leesu
     replacePlaceholder(panel('입출금', `<p class="text-sm text-dim">보유 머니 ${user.money.toLocaleString('ko-KR')}</p><form data-user-cash class="flex flex-wrap items-end gap-2"><select data-field="type" class="h-10 rounded-lg border border-edge bg-input px-3 text-sm font-bold"><option>입금</option><option>출금</option></select>${field('금액', '10000', 'amount', 'number')}${field('메모', '', 'memo')}<button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">신청</button></form><p data-cash-result class="text-sm font-bold text-accent"></p>`))
     return true
   }
   if (path.endsWith('/account.html')) {
-    const user = data.users.test
+    const user = data.users.leesu
     replacePlaceholder(panel('내 정보', `<form data-account class="max-w-md space-y-3">${field('닉네임', user.nick, 'nick')}<p class="text-sm text-dim">머니 ${user.money.toLocaleString('ko-KR')} · 포인트 ${user.points.toLocaleString('ko-KR')}P</p><button class="h-10 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">저장</button></form>`))
     return true
   }
@@ -4218,7 +4524,7 @@ function bindBoardQueue() {
   if (!empty) return
   const data = store()
   if (!data.boardQueue) {
-    data.boardQueue = [{ id: 1, author: '테스트유저', title: '오늘 경기 응원글', hidden: false }]
+    data.boardQueue = [{ id: 1, author: '이수민', title: '오늘 경기 응원글', hidden: false }]
     commit(data)
   }
   const host = empty.parentElement
@@ -4262,8 +4568,8 @@ function bindPageForms() {
       if (type === '입금' && amount < minIn) return toast(`최소 입금액은 ${minIn.toLocaleString('ko-KR')}입니다.`)
       if (type === '출금' && amount < minOut) return toast(`최소 출금액은 ${minOut.toLocaleString('ko-KR')}입니다.`)
       if (type === '출금' && amount > maxOut) return toast(`1회 최대 출금액은 ${maxOut.toLocaleString('ko-KR')}입니다.`)
-      if (type === '출금' && latest.users.test.money < amount) return toast('보유 머니가 부족합니다.')
-      latest.cashExtra.unshift({ id: latest.nextId++, login: 'test', nick: latest.users.test.nick, type, amount, memo: memoText, status: '대기', requestedAt: stamp(), processedAt: '' })
+      if (type === '출금' && latest.users.leesu.money < amount) return toast('보유 머니가 부족합니다.')
+      latest.cashExtra.unshift({ id: latest.nextId++, login: 'leesu', nick: latest.users.leesu.nick, type, amount, memo: memoText, status: '대기', requestedAt: stamp(), processedAt: '' })
       logAction(latest, `회원 ${type} 신청 ${amount.toLocaleString('ko-KR')}`)
       commit(latest)
       const result = document.querySelector('[data-cash-result]')
@@ -4275,7 +4581,7 @@ function bindPageForms() {
       const latest = store()
       const nick = form.querySelector('[data-field="nick"]').value.trim()
       if (!nick) return toast('닉네임을 입력해 주세요.')
-      latest.users.test.nick = nick
+      latest.users.leesu.nick = nick
       logAction(latest, `닉네임 변경 ${nick}`)
       commit(latest)
       toast('저장했습니다.')
@@ -4348,7 +4654,7 @@ function bindPageForms() {
       const approved = latest.cashExtra.filter((item) => item.status === '승인')
       const result = document.querySelector('[data-audit-result]')
       const line = approved.length
-        ? `대조 완료. 추가 처리 ${approved.length}건, 회원 머니 테스트유저 ${latest.users.test.money.toLocaleString('ko-KR')}`
+        ? `대조 완료. 추가 처리 ${approved.length}건, 회원 머니 이수민 ${latest.users.leesu.money.toLocaleString('ko-KR')}`
         : '대조 완료. 추가 승인 건이 없어 캡처 잔액과 같습니다.'
       if (result) result.textContent = line
       logAction(latest, '정산 대조 실행')
@@ -4381,7 +4687,7 @@ function bindPageForms() {
     const odd = event.target.closest('[data-odd]')
     if (odd) {
       const latest = store()
-      if (latest.users.test.blocked) return toast('차단된 회원은 베팅할 수 없습니다.')
+      if (latest.users.leesu.blocked) return toast('차단된 회원은 베팅할 수 없습니다.')
       latest.slip.push({ match: odd.dataset.match, pick: odd.dataset.pick, odds: Number(odd.dataset.odd) })
       commit(latest)
       paintSlip('show')
@@ -4450,10 +4756,10 @@ function bindPageForms() {
       const min = Number(latest.settings['베팅 한도']?.['등급없음']?.[0] || 1000)
       if (!latest.slip.length) return toast('베팅카트가 비어 있습니다.')
       if (!stake || stake < min) return toast(`최소 베팅금은 ${min.toLocaleString('ko-KR')}입니다.`)
-      if (latest.users.test.blocked) return toast('차단된 회원은 베팅할 수 없습니다.')
-      if (latest.users.test.money < stake * latest.slip.length) return toast('보유 머니가 부족합니다.')
+      if (latest.users.leesu.blocked) return toast('차단된 회원은 베팅할 수 없습니다.')
+      if (latest.users.leesu.money < stake * latest.slip.length) return toast('보유 머니가 부족합니다.')
       latest.slip.forEach((item) => {
-        latest.placedBets.unshift({ id: latest.nextId++, login: 'test', nick: latest.users.test.nick, match: item.match, pick: item.pick, odds: item.odds, stake, status: '진행 중', at: stamp() })
+        latest.placedBets.unshift({ id: latest.nextId++, login: 'leesu', nick: latest.users.leesu.nick, match: item.match, pick: item.pick, odds: item.odds, stake, status: '진행 중', at: stamp() })
       })
       latest.slip = []
       logAction(latest, `베팅 접수 ${stake.toLocaleString('ko-KR')}`)
@@ -4532,10 +4838,273 @@ function boardLayout() {
   style.textContent = '[data-status-zones]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}[data-status-zones] section{display:flex;flex-direction:column;gap:8px;width:auto;max-width:none;min-width:0;background:#191c1f;border:1px solid #2e343a;border-radius:12px;padding:8px 10px}[data-status-zones] h2{margin:0;font-size:24px;font-weight:700;line-height:1.2;text-align:center}[data-status-zones] [data-zone-grid]{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;width:100%;align-items:stretch}[data-status-zones] [data-zone-grid]>.bg-card,[data-status-zones] [data-zone-grid]>a{width:auto;height:auto;min-height:0;min-width:0}[data-status-zones] .bg-card{width:auto;height:auto;min-height:0;padding:8px 10px;justify-content:center;text-align:center}[data-status-zones] .truncate{overflow:visible;text-overflow:unset;white-space:nowrap}[data-status-zones] .text-muted{color:#e8eef6}[data-status-zones] section:has([data-zone-grid]>:nth-child(3)){grid-column:1 / -1}[data-status-zones] section[data-tone="in"]:has([data-zone-grid]),[data-status-zones] section[data-tone="out"]:has([data-zone-grid]){grid-column:auto}[data-status-zones] section[data-tone="in"] [data-zone-grid],[data-status-zones] section[data-tone="out"] [data-zone-grid]{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}[data-status-zones] section[data-tone="in"] .bg-card,[data-status-zones] section[data-tone="out"] .bg-card{flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px 4px}[data-status-zones] section[data-tone="in"] .bg-card>.min-w-0,[data-status-zones] section[data-tone="out"] .bg-card>.min-w-0{width:100%;min-width:0;text-align:center}[data-status-zones] section[data-tone="in"] .text-muted,[data-status-zones] section[data-tone="out"] .text-muted{white-space:normal;letter-spacing:0;font-size:10px;line-height:1.25}[data-status-zones] section[data-tone="in"] .text-lg,[data-status-zones] section[data-tone="out"] .text-lg{font-size:13px}[data-status-zones] section[data-tone="in"] .w-9,[data-status-zones] section[data-tone="out"] .w-9{width:26px;height:26px}[data-status-zones] section[data-tone="in"] .truncate,[data-status-zones] section[data-tone="out"] .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}[data-status-zones] section:has([data-zone-grid]>:nth-child(6)) [data-zone-grid]{grid-template-columns:repeat(3,minmax(0,1fr))}[data-status-zones] section:last-child:not(:has([data-zone-grid]>:nth-child(3))){grid-column:1 / -1}[data-status-zones] section[data-tone="access"]{background:#1a1e22;border-color:#2e343c}[data-status-zones] section[data-tone="in"]{background:#1a1f1d;border-color:#2e3632}[data-status-zones] section[data-tone="out"]{background:#1f1b1d;border-color:#363034}[data-status-zones] section[data-tone="wait-in"]{background:#1e1d1a;border-color:#363430}[data-status-zones] section[data-tone="wait-out"]{background:#1e1c1a;border-color:#363230}[data-status-zones] section[data-tone="sport"]{background:#1c1e1a;border-color:#323630}[data-status-zones] section[data-tone="casino"]{background:#1d1b1e;border-color:#343034}[data-status-zones] section[data-tone="dist"]{grid-column:1 / -1;background:#1a1e1e;border-color:#2e3434}[data-status-zones] section[data-tone="live"]{background:#1a1c20;border-color:#2e323a}[data-status-zones] section[data-tone="access"] .bg-card{background:#24292f;border-color:#353b44}[data-status-zones] section[data-tone="in"] .bg-card{background:#242b28;border-color:#353e3a}[data-status-zones] section[data-tone="out"] .bg-card{background:#2a2427;border-color:#3e3539}[data-status-zones] section[data-tone="wait-in"] .bg-card{background:#2a2824;border-color:#3e3b35}[data-status-zones] section[data-tone="wait-out"] .bg-card{background:#2a2624;border-color:#3e3935}[data-status-zones] section[data-tone="sport"] .bg-card{background:#262924;border-color:#393e35}[data-status-zones] section[data-tone="casino"] .bg-card{background:#282428;border-color:#3b353b}[data-status-zones] section[data-tone="dist"] .bg-card{background:#242a2a;border-color:#353e3e}[data-status-zones] section[data-tone="live"] .bg-card{background:#24272e;border-color:#353942}[data-status-zones] .w-9{background:#2e343c;color:#d5dbe3}[data-status-zones] [data-tone="access"] .w-9{background:#2e343c;color:#d7dee6}[data-status-zones] [data-tone="in"] .w-9{background:#2c3430;color:#d5e0db}[data-status-zones] [data-tone="out"] .w-9{background:#342e32;color:#e0d6db}[data-status-zones] [data-tone="wait-in"] .w-9{background:#34322c;color:#e0ddd4}[data-status-zones] [data-tone="wait-out"] .w-9{background:#34302c;color:#e0dbd4}[data-status-zones] [data-tone="sport"] .w-9{background:#30342c;color:#dce0d4}[data-status-zones] [data-tone="casino"] .w-9{background:#322e34;color:#ddd6e0}[data-status-zones] [data-tone="dist"] .w-9{background:#2e3634;color:#d5e0dc}[data-status-zones] [data-tone="bet"] .w-9{background:#30342c;color:#dce0d4}[data-status-zones] [data-tone="live"] .w-9{background:#2e323c;color:#d6dae2}[data-lower-board]{display:flex;flex-direction:column;gap:0;margin-top:28px;padding:6px 2px 24px;background:#101316}[data-lower-board] [data-lower-row],[data-lower-board] [data-rank-frame],[data-lower-board] [data-match-slot]{padding:22px 6px 4px;border-top:1px solid #2a3138}[data-lower-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow-x:auto}[data-lower-board] section>div:first-child{display:block;width:100%;border:0;padding:0 0 8px;background:transparent}[data-lower-board] h2{display:block;width:100%;margin:0 0 16px;padding:0 0 10px;font-size:22px;font-weight:800;letter-spacing:0;line-height:1.35;color:#f4f7fb;text-align:center;border-bottom:1px solid #3a424a}[data-lower-board] p{text-align:center}[data-lower-board] .px-4,[data-lower-board] .p-4,[data-lower-board] .py-3{padding:0}[data-lower-board] [data-flow] .px-4>.flex{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border-top:1px solid #2a3138;border-bottom:1px solid #2a3138}[data-lower-board] [data-flow] .px-4>.flex>span{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:transparent;border:0;border-radius:0;border-right:1px solid #2a3138;padding:16px 14px 12px}[data-lower-board] [data-flow] .px-4>.flex>span b{font-size:28px;line-height:1;font-weight:700;letter-spacing:-.04em}[data-lower-board] [data-flow] .px-4>.flex>a{grid-column:1 / -1;margin:10px 0 0;width:max-content;color:#d5dbe2;text-decoration:underline;text-underline-offset:3px}[data-lower-board] [data-snap] dl{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;border-top:1px solid #2a3138;border-bottom:1px solid #2a3138}[data-lower-board] [data-snap] dl>div{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:transparent;border:0;border-radius:0;border-right:1px solid #2a3138;padding:16px 12px 12px}[data-lower-board] [data-snap] .border-t{display:none}[data-lower-board] [data-snap] dd,[data-lower-board] [data-snap] .text-right{text-align:left}[data-lower-board] [data-snap] .font-black{font-size:22px;letter-spacing:-.04em;line-height:1}[data-lower-board] [data-snap] a,[data-lower-board] a.mt-auto{display:inline-flex;margin-top:12px;padding:0;background:transparent;color:#d5dbe2;text-decoration:underline;text-underline-offset:3px;justify-content:flex-start}[data-lower-board] table{width:100%;border-collapse:collapse;background:transparent}[data-lower-board] th{padding:0 10px 8px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#6e7882;text-align:center!important;border:0;border-bottom:1px solid #2a3138;background:transparent;white-space:nowrap!important}[data-lower-board] td{padding:12px 10px;font-size:12px;line-height:1.35;text-align:center!important;border:0;border-bottom:1px solid #1c2228;background:transparent;white-space:nowrap!important}[data-lower-board] tbody tr:last-child td{border-bottom:0}[data-lower-board] td span{background:transparent;border-radius:0;padding:0}[data-lower-board] td div,[data-lower-board] td span{justify-content:center!important}[data-lower-board] svg{display:block;width:100%;max-height:150px}[data-lower-board] [data-rank-grid]{display:grid;grid-template-columns:minmax(0,1fr);gap:28px;align-items:start}[data-lower-board] [data-rank-frame]>h2{margin-bottom:16px}@media (max-width:980px){[data-lower-board] [data-lower-row="work"],[data-lower-board] [data-rank-grid],[data-lower-board] [data-flow] .px-4>.flex,[data-lower-board] [data-snap] dl{grid-template-columns:1fr}[data-lower-board] [data-flow] .px-4>.flex>span,[data-lower-board] [data-snap] dl>div{border-right:0;border-bottom:1px solid #2a3138}}[data-settle-legacy]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}[data-settle-board]{display:flex;flex-direction:column;gap:22px;margin-top:8px;padding:4px 0 32px}[data-settle-query]{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end;padding:0 0 14px;border-bottom:1px solid #3a424a}[data-settle-query] label{display:flex;flex-direction:column;gap:6px;min-width:148px;font-size:12px;font-weight:700;color:#9aa3ad}[data-settle-query] input,[data-settle-query] select{height:38px;border:0;border-bottom:1px solid #6e7882;border-radius:0;background:transparent;color:#f4f7fb;padding:0 2px;font-size:14px}[data-settle-query] button{height:38px;padding:0 18px;border:1px solid #c5ced8;border-radius:0;background:transparent;color:#f4f7fb;font-size:13px;font-weight:800}[data-settle-query] [data-settle-search]{min-width:84px;background:#24303a;border-color:#9aa3ad;color:#f4f7fb;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .1s ease,box-shadow .15s ease}[data-settle-query] [data-settle-search]:hover{background:#334554;border-color:#e8eef6;color:#fff}[data-settle-query] [data-settle-search]:active,[data-settle-query] [data-settle-search][data-on]{background:#1a222a;border-color:#c5ced8;transform:translateY(1px)}[data-settle-query] [data-settle-search]:focus-visible{outline:1px solid #c5ced8;outline-offset:2px}[data-settle-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible}[data-settle-board] h2{display:block;width:100%;margin:0 0 12px;padding:0 0 8px;font-size:18px;font-weight:800;letter-spacing:0;line-height:1.35;color:#f4f7fb;text-align:left;border-bottom:1px solid #3a424a}[data-settle-board] section>div:first-child{display:block;width:100%;border:0;padding:0;background:transparent}[data-settle-board] .uppercase{text-transform:none;letter-spacing:0}[data-settle-board] .w-9,[data-settle-band="plan"] .h-9{display:none}[data-settle-metrics]{display:block}[data-settle-metrics]>.grid,[data-settle-metrics]>.grid:last-child{display:grid;grid-template-columns:1fr 1fr;gap:0}[data-settle-metrics] .bg-card{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;min-width:0;background:transparent;border:0;border-radius:0;border-bottom:1px solid #243038;padding:11px 8px}[data-settle-metrics] .min-w-0{display:flex;flex:1;align-items:center;justify-content:space-between;gap:12px;min-width:0}[data-settle-metrics] .text-lg{font-size:18px;font-weight:800}[data-settle-metrics] .truncate{overflow:visible;text-overflow:unset;white-space:normal}[data-settle-board] th{font-size:11px;font-weight:700;color:#8b95a1;text-align:center!important}[data-settle-board] td{text-align:center!important;border-bottom:1px solid #1c2228}[data-settle-board] [data-settle-tone] .p-4{display:flex;flex-direction:column;align-items:stretch}[data-settle-board] [data-settle-tone]>[data-settle-sample]{align-items:stretch}[data-settle-band="plan"] .p-4{display:flex;flex-direction:column;gap:8px;padding:0}[data-settle-band="plan"] h2{text-align:center!important}[data-settle-plan]{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}[data-plan-hero]{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;padding:4px 2px 12px;border-bottom:1px solid #3a424a}[data-plan-hero] span{font-size:13px;font-weight:800;color:#c5ced8}[data-plan-hero] b{font-size:28px;font-weight:800;color:#f4f7fb;letter-spacing:-.03em}[data-plan-grid]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;width:100%}[data-plan-grid]>div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px 10px;border-bottom:1px solid #243038;border-right:1px solid #243038;text-align:center}[data-plan-grid]>div:last-child{border-right:0}[data-plan-grid] span{font-size:12px;font-weight:700;color:#9aa3ad}[data-plan-grid] b{font-size:18px;font-weight:800;color:#f4f7fb}[data-plan-note]{margin:0;max-width:52rem;font-size:12px;line-height:1.55;color:#9aa3ad;text-align:center}@media (max-width:980px){[data-plan-grid]{grid-template-columns:1fr}[data-plan-grid]>div{border-right:0}}[data-settle-band="spread"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}[data-settle-split]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;min-width:0;align-items:stretch}[data-settle-band="rank"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}[data-settle-band="edge"]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}@media (max-width:1100px){[data-settle-band="edge"]{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:640px){[data-settle-band="edge"]{grid-template-columns:1fr}}[data-settle-mix-wrap]{display:flex;align-items:center;justify-content:center;gap:22px;min-width:0;width:100%}[data-settle-mix-chart]{position:relative;flex:0 0 150px;width:150px;height:150px}[data-settle-mix-chart] svg{display:block;width:150px;height:150px;max-height:none}[data-settle-mix-center]{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none}[data-settle-mix-center] span{font-size:10px;font-weight:800;color:#9aa3ad}[data-settle-mix-center] b{font-size:14px;font-weight:900;color:#f4f7fb;letter-spacing:-.02em}[data-settle-mix-legend]{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:0;flex:1 1 auto;max-width:280px}[data-settle-mix-row]{display:grid;grid-template-columns:10px minmax(0,1fr) 40px 72px;align-items:center;justify-items:start;gap:8px;font-size:12px;width:100%}[data-settle-mix-row] i{display:block;width:10px;height:10px;border-radius:3px;flex:0 0 auto}[data-settle-mix-row] span{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:#c5ced8;text-align:left;white-space:nowrap}[data-settle-mix-row] em{font-style:normal;color:#9aa3ad;font-variant-numeric:tabular-nums;text-align:right;justify-self:end}[data-settle-mix-row] b{font-weight:800;color:#f4f7fb;font-variant-numeric:tabular-nums;text-align:right;justify-self:end}@media (max-width:640px){[data-settle-mix-wrap]{flex-direction:column;align-items:center}}[data-settle-hold]{display:none}@media (max-width:980px){[data-settle-metrics]>.grid,[data-settle-metrics]>.grid:last-child{grid-template-columns:1fr}}[data-settle-query] [data-settle-date]{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-width:168px}[data-settle-query] [data-settle-date] input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}[data-settle-query] [data-settle-face]{display:flex;align-items:center;justify-content:center;width:100%;height:38px;padding:0;border:0;border-bottom:1px solid #6e7882;border-radius:0;background:transparent;color:#f4f7fb;font-size:14px;font-weight:700;text-align:center;letter-spacing:.02em;cursor:pointer}[data-settle-query] [data-open-cal]{position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:1}[data-settle-query] [data-open-cal]{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid #6e7882;background:#1c2126;color:#f4f7fb;cursor:pointer}[data-settle-query] input[type="date"]::-webkit-calendar-picker-indicator{opacity:0;width:0;padding:0;margin:0}[data-settle-query] [data-settle-span-label]{min-width:168px}[data-settle-query] select{color-scheme:dark;background:#1c2126;color:#f4f7fb}[data-settle-query] select option{background:#1c2126;color:#f4f7fb}[data-settle-date]{position:relative}[data-settle-cal]{position:absolute;top:42px;left:0;z-index:50;width:280px;padding:10px;background:#1c2126;border:1px solid #8b95a1;color:#f4f7fb}[data-settle-cal] [data-cal-head]{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}[data-settle-cal] [data-cal-head] strong{font-size:14px;font-weight:800}[data-settle-cal] [data-cal-week],[data-settle-cal] [data-cal-days]{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}[data-settle-cal] [data-cal-week] span{text-align:center;font-size:11px;color:#c5ced8}[data-settle-cal] button{height:32px;min-width:0;padding:0;border:0;background:transparent;color:#f4f7fb;font-size:13px;font-weight:700}[data-settle-cal] [data-cal-day][data-out]{color:#8b95a1}[data-settle-cal] [data-cal-day][data-on]{background:#2f6b4f;color:#f4f7fb}[data-settle-cal] [data-cal-day][data-today]{box-shadow:inset 0 0 0 1px #f4f7fb}[data-settle-pick]{position:relative;display:block}[data-settle-query] [data-span-toggle]{width:100%;height:38px;padding:0 8px;border:0;border-bottom:1px solid #6e7882;background:transparent;color:#f4f7fb;text-align:center;font-size:14px;font-weight:700;cursor:pointer}[data-span-menu]{position:absolute;top:42px;left:0;z-index:50;display:flex;flex-direction:column;min-width:168px;padding:6px 0;background:#15191d;border:1px solid #3a424a;box-shadow:0 10px 24px rgba(0,0,0,.45)}[data-span-menu] button{height:34px;width:100%;padding:0 12px;border:0;background:transparent;color:#e8eef6;text-align:center;font-size:13px;font-weight:700;cursor:pointer}[data-span-menu] button:hover{background:#22282e;color:#f4f7fb}[data-span-menu] button[data-on]{background:#24352e;color:#c8edd8}[data-cash-detail]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}[data-cash-detail] h3{margin:0 0 8px;font-size:15px;font-weight:800;color:#f4f7fb}[data-cash-detail] [data-cash-kind] div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #243038;font-size:13px;color:#c5ced8}[data-cash-detail] b{color:#f4f7fb;font-size:16px;font-weight:800}[data-cash-detail] [data-cash-profit] span,[data-cash-detail] [data-cash-profit] b{color:#d7ebe4}@media (max-width:980px){[data-cash-detail]{grid-template-columns:1fr}}[data-lower-board] h2,[data-lower-board] th,[data-lower-board] td,[data-lower-board] th *,[data-lower-board] td *{text-align:center!important}[data-lower-board] th{letter-spacing:0!important}[data-lower-board] td button,[data-lower-board] td a,[data-lower-board] td span,[data-lower-board] td div{display:inline-flex;justify-content:center!important;align-items:center;margin-left:auto;margin-right:auto}[data-lower-board] th[data-league-col],[data-lower-board] td[data-league-col]{text-align:left!important}[data-lower-board] th[data-league-col] *,[data-lower-board] td[data-league-col] *{text-align:left!important;justify-content:flex-start!important;margin-left:0!important;margin-right:auto!important}[data-lower-board] td[data-league-col] span,[data-lower-board] td[data-league-col] div{display:inline-flex!important;justify-content:flex-start!important;align-items:center;gap:6px;max-width:100%}[data-lower-board] th[data-home-col],[data-lower-board] td[data-home-col]{width:168px;min-width:168px;max-width:168px;text-align:right!important;padding-left:4px;padding-right:8px}[data-lower-board] th[data-vs-col],[data-lower-board] td[data-vs-col]{width:40px;min-width:40px;max-width:40px;text-align:center!important;padding-left:0;padding-right:0;color:#c5ced8;font-weight:800}[data-lower-board] th[data-away-col],[data-lower-board] td[data-away-col]{width:168px;min-width:168px;max-width:168px;text-align:left!important;padding-left:8px;padding-right:4px}[data-lower-board] td[data-home-col],[data-lower-board] td[data-away-col]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}[data-lower-board] td[data-home-col]>span,[data-lower-board] td[data-away-col]>span,[data-lower-board] td[data-home-col]>div,[data-lower-board] td[data-away-col]>div{display:inline-flex!important;align-items:center;gap:6px;margin:0!important;max-width:100%;width:auto}[data-lower-board] td[data-home-col]>span,[data-lower-board] td[data-home-col]>div{justify-content:flex-end!important;margin-left:auto!important;margin-right:0!important}[data-lower-board] td[data-away-col]>span,[data-lower-board] td[data-away-col]>div{justify-content:flex-start!important;margin-left:0!important;margin-right:auto!important}[data-lower-board] td[data-home-col] img,[data-lower-board] td[data-away-col] img{width:18px;height:18px;flex:0 0 auto}[data-settle-query]{justify-content:center;align-items:flex-end}[data-settle-query] label{align-items:center;text-align:center}[data-settle-query] [data-span-toggle]{text-align:center}[data-settle-board] h2,[data-cash-detail] h3{text-align:center!important}[data-cash-detail] [data-cash-kind] div{justify-content:center;gap:16px}[data-settle-board] [data-cash-kind]{padding:12px 14px 4px;background:#2c3532;border:1px solid #5a7a6a;border-top-width:3px}[data-settle-board] [data-cash-kind="자체 처리"]{background:#2c3532;border-color:#5a7a6a}[data-settle-board] [data-cash-kind="자체 처리"] h3,[data-settle-board] [data-cash-kind="자체 처리"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="자체 처리"] [data-cash-profit] b{color:#b8e6d2}[data-settle-board] [data-cash-kind="USDT"]{background:#35342c;border-color:#9a8560}[data-settle-board] [data-cash-kind="USDT"] h3,[data-settle-board] [data-cash-kind="USDT"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="USDT"] [data-cash-profit] b{color:#f0e4c0}[data-settle-board] [data-cash-kind="P2P"]{background:#2c3340;border-color:#6a7fa0}[data-settle-board] [data-cash-kind="P2P"] h3,[data-settle-board] [data-cash-kind="P2P"] [data-cash-profit] span,[data-settle-board] [data-cash-kind="P2P"] [data-cash-profit] b{color:#d0def4}[data-settle-board] [data-settle-tone]{padding:12px 14px 16px;border:1px solid transparent;border-top-width:3px}[data-settle-board] [data-settle-tone="in"]{background:#2c3532;border-color:#5a7a6a}[data-settle-board] [data-settle-tone="in"] h2{color:#b8e6d2;border-bottom-color:#5a7a6a}[data-settle-board] [data-settle-tone="out"]{background:#352e32;border-color:#9a6a78}[data-settle-board] [data-settle-tone="out"] h2{color:#f4d4dc;border-bottom-color:#9a6a78}[data-settle-board] [data-settle-tone="sport"]{background:#32362e;border-color:#6e7a5a}[data-settle-board] [data-settle-tone="sport"] h2{color:#e2ecd0;border-bottom-color:#6e7a5a}[data-settle-board] [data-settle-tone="type"]{background:#2e3634;border-color:#5a7a72}[data-settle-board] [data-settle-tone="type"] h2{color:#d0ece4;border-bottom-color:#5a7a72}[data-settle-board] [data-settle-tone="casino"]{background:#322e38;border-color:#7a6a90}[data-settle-board] [data-settle-tone="casino"] h2{color:#e2d6f0;border-bottom-color:#7a6a90}[data-settle-board] [data-settle-tone="win"]{background:#35342c;border-color:#9a8560}[data-settle-board] [data-settle-tone="win"] h2{color:#f0e4c0;border-bottom-color:#9a8560}[data-settle-board] [data-settle-tone="loss"]{background:#322e38;border-color:#7a6a90}[data-settle-board] [data-settle-tone="loss"] h2{color:#e2d6f0;border-bottom-color:#7a6a90}[data-settle-sample]{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:4px;width:100%}[data-settle-sample][data-settle-list]{gap:0;margin-top:10px}[data-settle-list-head],[data-settle-list-row]{display:grid;grid-template-columns:40px minmax(96px,1fr) 104px;gap:8px;align-items:center;width:100%;padding:11px 6px;border-bottom:1px solid #243038}[data-settle-list-head][data-with-meta],[data-settle-list-row][data-with-meta]{grid-template-columns:40px minmax(96px,1fr) 52px 104px}[data-settle-list-head][data-plain],[data-settle-list-row][data-plain]{grid-template-columns:minmax(96px,1fr) 72px}[data-settle-list-head]{padding-top:0;padding-bottom:8px;border-bottom-color:#3a424a;font-size:11px;font-weight:700;color:#8b95a1}[data-settle-list-head] span,[data-settle-list-head] span:last-child,[data-settle-list-head] span:nth-child(3){text-align:center!important;justify-self:center}[data-settle-list-row]:last-child{border-bottom:0}[data-settle-list-row] em{font-style:normal;font-size:12px;font-weight:800;color:#8b95a1;font-variant-numeric:tabular-nums;text-align:center!important;justify-self:center}[data-settle-list-row] span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700;color:#e8eef6;text-align:center!important;justify-self:center}[data-settle-list-row] i{font-style:normal;font-size:12px;font-weight:700;color:#9aa3ad;text-align:center!important;justify-self:center;font-variant-numeric:tabular-nums}[data-settle-list-row] b{font-size:14px;font-weight:800;color:#f4f7fb;text-align:center!important;justify-self:center;font-variant-numeric:tabular-nums;white-space:nowrap}[data-settle-tone="win"] [data-settle-list-row] b{color:#f0e4c0}[data-settle-tone="loss"] [data-settle-list-row] b{color:#e2d6f0}[data-settle-tone="in"] [data-settle-list-row] b{color:#b8e6d2}[data-settle-tone="out"] [data-settle-list-row] b{color:#f4d4dc}[data-settle-board] [data-settle-tone] p{margin:0 0 2px;padding:0 6px;font-size:11px;line-height:1.45;color:#9aa3ad;text-align:center}[data-settle-size]{display:inline-flex;align-items:baseline;gap:3px;font-size:11px;font-weight:600;color:#8b95a1;white-space:nowrap}[data-settle-size] select{height:auto;min-width:0;margin:0;padding:0 0 1px;border:0;border-bottom:1px solid #5a6570;border-radius:0;background:transparent;color:#c5ced8;font-size:12px;font-weight:700;cursor:pointer}[data-settle-size] select:hover,[data-settle-size] select:focus{color:#f4f7fb;border-bottom-color:#c5ced8;outline:none}[data-settle-size] select option{background:#15191d;color:#f4f7fb}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]){display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:8px;padding-bottom:8px;border-bottom:1px solid #3a424a;margin-bottom:4px}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]) h2{grid-column:2;margin:0;padding:0;border:0;width:auto;text-align:center}[data-settle-board] [data-settle-tone]>div:first-child:has([data-settle-size]) [data-settle-size]{grid-column:3;justify-self:end;align-self:center}[data-settle-tone="in"] [data-settle-sample-bar],[data-settle-tone="sport"] [data-settle-sample-bar]{background:#6fa889}[data-settle-tone="type"] [data-settle-sample-bar]{background:#6fa8a0}[data-settle-tone="casino"] [data-settle-sample-bar]{background:#8a78a8}[data-settle-tone="out"] [data-settle-sample-bar]{background:#b87a8a}[data-settle-tone="win"] [data-settle-sample-bar]{background:#b89a62}[data-settle-tone="loss"] [data-settle-sample-bar]{background:#8a78a8}[data-risk-board]{display:flex;flex-direction:column;gap:12px;margin-top:8px;padding:4px 0 8px}[data-risk-board] section{background:transparent;border:0;border-radius:0;box-shadow:none;overflow-x:auto}[data-risk-board] h2{display:inline-flex;margin:0;padding:0;font-size:16px;font-weight:800;color:#f4f7fb;text-align:center;border:0;line-height:1.2}[data-risk-filters]{margin:0 0 10px;padding:0 0 12px;border-bottom:1px solid #3a424a;text-align:center}[data-risk-filters] input,[data-risk-filters] select{color-scheme:dark;text-align:center}[data-risk-pick-rows]{width:100%}[data-risk-filter-row]{justify-content:center}[data-risk-chips] button{min-width:64px}[data-risk-board] table,[data-risk-members] table{width:100%;border-collapse:collapse;background:transparent}[data-risk-board] th,[data-risk-members] th{padding:0 10px 8px;font-size:11px;font-weight:700;color:#8b95a1;text-align:center;border:0;border-bottom:1px solid #2a3138;white-space:nowrap}[data-risk-board] td,[data-risk-members] td{padding:12px 10px;font-size:12px;line-height:1.35;text-align:center;border:0;border-bottom:1px solid #1c2228;white-space:nowrap}[data-risk-board] tbody tr:last-child td,[data-risk-members] tbody tr:last-child td{border-bottom:0}[data-risk-board] th,[data-risk-board] td,[data-risk-board] th *,[data-risk-board] td *,[data-risk-members] th,[data-risk-members] td,[data-risk-members] th *,[data-risk-members] td *{text-align:center!important}[data-risk-members]{margin-top:4px;text-align:center}[data-risk-summary]{display:flex;flex-direction:column;gap:12px}[data-risk-zones]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}[data-risk-zones] section{grid-column:auto!important}[data-risk-zones] h2{font-size:18px!important;margin:0 0 4px;text-align:center}[data-risk-zones] [data-zone-grid]{grid-template-columns:repeat(2,minmax(0,1fr))!important}[data-risk-members]+p,main section:has([data-risk-members]) p{text-align:center}'
 }
 
+function kstTodayYmd() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
+}
+
+function escHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]))
+}
+
+function betHistoryQuery(state) {
+  const params = new URLSearchParams()
+  params.set('range', state.range)
+  if (state.range === 'custom') {
+    params.set('from', state.from)
+    params.set('to', state.to)
+  }
+  if (state.status) params.set('status', state.status)
+  if (state.login) params.set('login', state.login)
+  if (state.sport) params.set('sport', state.sport)
+  if (state.league) params.set('league', state.league)
+  if (state.folder) params.set('folder', state.folder)
+  if (state.live) params.set('live', state.live)
+  if (state.stakeMin !== '') params.set('stakeMin', String(state.stakeMin))
+  if (state.stakeMax !== '') params.set('stakeMax', String(state.stakeMax))
+  if (state.cursor) params.set('cursor', state.cursor)
+  params.set('limit', '20')
+  return params.toString()
+}
+
+function mountBetHistory() {
+  if (!location.pathname.endsWith('/bets.html')) return false
+  const box = document.querySelector('main .space-y-4')
+  if (!box) return false
+  const today = kstTodayYmd()
+  const state = {
+    range: 'today',
+    from: today,
+    to: today,
+    status: '',
+    login: '',
+    sport: '',
+    league: '',
+    folder: '',
+    live: '',
+    stakeMin: '',
+    stakeMax: '',
+    cursor: '',
+    items: [],
+    nextCursor: null,
+  }
+
+  function money(n) {
+    return Number(n || 0).toLocaleString('ko-KR')
+  }
+
+  function fail() {
+    box.innerHTML = '<div id="bet-history-root" class="rounded-xl border border-edge bg-card p-10 text-center text-sm text-dim">데이터를 불러오지 못했습니다</div>'
+  }
+
+  function paint(summary) {
+    const rows = state.items.map((row) => {
+      const open = row.expandable
+        ? `<button type="button" data-expand="${row.id}" class="rounded-md border border-edge px-2 py-1 text-[11px] font-bold text-dim">펼치기</button>`
+        : '-'
+      const legs = row.expandable
+        ? `<tr hidden data-legs="${row.id}"><td colspan="11" class="px-4 py-3 bg-panel text-sm">${
+          (row.legs || []).map((leg) => `<div class="flex flex-wrap gap-3 border-b border-edge-soft py-1"><span>${escHtml(leg.matchName)}</span><span class="text-dim">${escHtml(leg.marketName)} · ${escHtml(leg.outcomeName)}</span><span class="text-gold">${escHtml(String(leg.odds))}</span><span>${escHtml(leg.statusLabel)}</span></div>`).join('') || '<div class="text-dim">다리가 없습니다.</div>'
+        }</td></tr>`
+        : ''
+      return `<tr class="border-b border-edge-soft" data-detail="${row.id}">
+        <td class="px-3 py-2 text-muted whitespace-nowrap">${escHtml(row.placedAt.replace('T', ' ').slice(0, 16))}</td>
+        <td class="px-3 py-2 font-bold">${escHtml(row.nick)} (${escHtml(row.login)})</td>
+        <td class="px-3 py-2">${escHtml(row.matchName)}</td>
+        <td class="px-3 py-2">${escHtml(row.market)} · ${escHtml(row.line || row.outcome || '-')}</td>
+        <td class="px-3 py-2 text-right">${escHtml(String(row.odds))}</td>
+        <td class="px-3 py-2 text-right font-bold tabular-nums">${money(row.stake)}</td>
+        <td class="px-3 py-2 text-right text-gold font-bold tabular-nums">${money(row.potentialPayout)}</td>
+        <td class="px-3 py-2"><span class="${STATUS_CLASS[row.status] || STATUS_CLASS['진행 중']}">${escHtml(row.statusLabel)}</span></td>
+        <td class="px-3 py-2">${escHtml(row.folderLabel)}</td>
+        <td class="px-3 py-2">${escHtml(row.liveLabel)}</td>
+        <td class="px-3 py-2">${open}</td>
+      </tr>${legs}`
+    }).join('')
+    box.innerHTML = `<div id="bet-history-root" class="space-y-4">
+      <div class="grid gap-3 sm:grid-cols-4">
+        <div class="rounded-xl border border-edge bg-card p-4"><div class="text-xs text-muted">총 배팅금</div><div data-sum="stake" class="mt-1 text-lg font-black tabular-nums">${money(summary.totalStake)}</div></div>
+        <div class="rounded-xl border border-edge bg-card p-4"><div class="text-xs text-muted">총 지급액</div><div data-sum="paid" class="mt-1 text-lg font-black tabular-nums">${money(summary.totalPaid)}</div></div>
+        <div class="rounded-xl border border-edge bg-card p-4"><div class="text-xs text-muted">회사 손익</div><div data-sum="pnl" class="mt-1 text-lg font-black tabular-nums">${money(summary.companyPnl)}</div></div>
+        <div class="rounded-xl border border-edge bg-card p-4"><div class="text-xs text-muted">건수</div><div data-sum="count" class="mt-1 text-lg font-black tabular-nums">${money(summary.count)}</div></div>
+      </div>
+      <section class="bg-card border border-edge rounded-xl overflow-hidden">
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-edge-soft">
+          <h2 class="text-sm font-bold text-fg">스포츠베팅 내역</h2>
+          <button type="button" data-csv class="h-9 rounded-lg border border-edge px-3 text-xs font-bold text-dim">CSV</button>
+        </div>
+        <form data-bet-filter class="flex flex-wrap items-end gap-2 px-4 py-3">
+          <label class="text-xs text-muted">기간
+            <select name="range" class="mt-1 h-9 rounded-lg border border-edge bg-input px-2 text-sm">
+              <option value="today" ${state.range === 'today' ? 'selected' : ''}>오늘</option>
+              <option value="custom" ${state.range === 'custom' ? 'selected' : ''}>직접 지정</option>
+              <option value="all" ${state.range === 'all' ? 'selected' : ''}>전체기간</option>
+            </select>
+          </label>
+          <label class="text-xs text-muted">시작<input name="from" type="date" value="${escHtml(state.from)}" class="mt-1 h-9 rounded-lg border border-edge bg-input px-2 text-sm"></label>
+          <label class="text-xs text-muted">종료<input name="to" type="date" value="${escHtml(state.to)}" class="mt-1 h-9 rounded-lg border border-edge bg-input px-2 text-sm"></label>
+          <label class="text-xs text-muted">상태
+            <select name="status" class="mt-1 h-9 rounded-lg border border-edge bg-input px-2 text-sm">
+              <option value="">전체</option>
+              ${['진행', '적중', '낙첨', '적특', '취소'].map((item) => `<option value="${item}" ${state.status === item ? 'selected' : ''}>${item}</option>`).join('')}
+            </select>
+          </label>
+          <label class="text-xs text-muted">회원 아이디<input name="login" value="${escHtml(state.login)}" class="mt-1 h-9 w-32 rounded-lg border border-edge bg-input px-2 text-sm"></label>
+          <label class="text-xs text-muted">종목<input name="sport" value="${escHtml(state.sport)}" class="mt-1 h-9 w-24 rounded-lg border border-edge bg-input px-2 text-sm"></label>
+          <label class="text-xs text-muted">리그<input name="league" value="${escHtml(state.league)}" class="mt-1 h-9 w-28 rounded-lg border border-edge bg-input px-2 text-sm"></label>
+          <label class="text-xs text-muted">폴더
+            <select name="folder" class="mt-1 h-9 rounded-lg border border-edge bg-input px-2 text-sm">
+              <option value="">전체</option>
+              <option value="단폴더" ${state.folder === '단폴더' ? 'selected' : ''}>단폴더</option>
+              <option value="다폴더" ${state.folder === '다폴더' ? 'selected' : ''}>다폴더</option>
+            </select>
+          </label>
+          <label class="text-xs text-muted">구분
+            <select name="live" class="mt-1 h-9 rounded-lg border border-edge bg-input px-2 text-sm">
+              <option value="">전체</option>
+              <option value="라이브" ${state.live === '라이브' ? 'selected' : ''}>라이브</option>
+              <option value="일반" ${state.live === '일반' ? 'selected' : ''}>일반</option>
+            </select>
+          </label>
+          <label class="text-xs text-muted">금액 최소<input name="stakeMin" type="number" min="0" value="${escHtml(state.stakeMin)}" class="mt-1 h-9 w-28 rounded-lg border border-edge bg-input px-2 text-sm"></label>
+          <label class="text-xs text-muted">금액 최대<input name="stakeMax" type="number" min="0" value="${escHtml(state.stakeMax)}" class="mt-1 h-9 w-28 rounded-lg border border-edge bg-input px-2 text-sm"></label>
+          <button class="h-9 rounded-lg bg-accent px-4 text-sm font-bold text-on-accent">검색</button>
+          <button type="button" data-reset class="h-9 rounded-lg border border-edge px-4 text-sm font-bold text-dim">초기화</button>
+        </form>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-xs text-muted"><tr>
+              <th class="px-3 py-2 text-left">배팅 시각</th><th class="px-3 py-2 text-left">회원</th><th class="px-3 py-2 text-left">경기</th>
+              <th class="px-3 py-2 text-left">마켓·결과</th><th class="px-3 py-2 text-right">배당</th><th class="px-3 py-2 text-right">배팅금</th>
+              <th class="px-3 py-2 text-right">예상 지급액</th><th class="px-3 py-2 text-left">상태</th><th class="px-3 py-2 text-left">폴더</th>
+              <th class="px-3 py-2 text-left">구분</th><th class="px-3 py-2 text-left">다리</th>
+            </tr></thead>
+            <tbody>${rows || '<tr><td class="px-3 py-10 text-center text-sm text-dim" colspan="11">표시할 배팅이 없습니다.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="px-4 py-3">${state.nextCursor ? '<button type="button" data-more class="h-9 rounded-lg border border-edge px-3 text-xs font-bold text-dim">더 보기</button>' : ''}</div>
+        <div data-detail-box class="hidden border-t border-edge-soft px-4 py-4 text-sm"></div>
+      </section>
+    </div>`
+    bind()
+  }
+
+  function readForm(form) {
+    const data = new FormData(form)
+    state.range = String(data.get('range') || 'today')
+    state.from = String(data.get('from') || today)
+    state.to = String(data.get('to') || today)
+    state.status = String(data.get('status') || '')
+    state.login = String(data.get('login') || '').trim()
+    state.sport = String(data.get('sport') || '').trim()
+    state.league = String(data.get('league') || '').trim()
+    state.folder = String(data.get('folder') || '')
+    state.live = String(data.get('live') || '')
+    state.stakeMin = String(data.get('stakeMin') || '')
+    state.stakeMax = String(data.get('stakeMax') || '')
+    state.cursor = ''
+    state.items = []
+  }
+
+  async function load(append) {
+    const q = betHistoryQuery(state)
+    const [listRes, sumRes] = await Promise.all([
+      fetch(`/api/bet-history?${q}`, { credentials: 'include' }),
+      fetch(`/api/bet-history/summary?${q.replace(/&?cursor=[^&]*/, '').replace(/&?limit=\d+/, '')}`, { credentials: 'include' }),
+    ])
+    if (redirectIfAuthLost(listRes) || redirectIfAuthLost(sumRes)) return
+    if (!listRes.ok || !sumRes.ok) {
+      fail()
+      return
+    }
+    const list = await listRes.json()
+    const summary = await sumRes.json()
+    state.items = append ? state.items.concat(list.items || []) : (list.items || [])
+    state.nextCursor = list.nextCursor || null
+    paint(summary)
+  }
+
+  function bind() {
+    const root = document.getElementById('bet-history-root')
+    if (!root) return
+    root.querySelector('[data-bet-filter]')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      readForm(event.target)
+      load(false)
+    })
+    root.querySelector('[data-reset]')?.addEventListener('click', () => {
+      state.range = 'today'
+      state.from = today
+      state.to = today
+      state.status = ''
+      state.login = ''
+      state.sport = ''
+      state.league = ''
+      state.folder = ''
+      state.live = ''
+      state.stakeMin = ''
+      state.stakeMax = ''
+      state.cursor = ''
+      state.items = []
+      load(false)
+    })
+    root.querySelector('[data-more]')?.addEventListener('click', () => {
+      state.cursor = state.nextCursor || ''
+      load(true)
+    })
+    root.querySelector('[data-csv]')?.addEventListener('click', async () => {
+      const res = await fetch(`/api/bet-history/export.csv?${betHistoryQuery({ ...state, cursor: '' })}`, { credentials: 'include' })
+      if (!res.ok) {
+        fail()
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'sport-bets.csv'
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+    root.querySelectorAll('[data-expand]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation()
+        const row = root.querySelector(`[data-legs="${btn.dataset.expand}"]`)
+        if (row) row.hidden = !row.hidden
+      })
+    })
+    root.querySelectorAll('[data-detail]').forEach((tr) => {
+      tr.addEventListener('click', async () => {
+        const res = await fetch(`/api/bet-history/${tr.dataset.detail}`, { credentials: 'include' })
+        const boxEl = root.querySelector('[data-detail-box]')
+        if (!boxEl) return
+        if (!res.ok) {
+          boxEl.classList.remove('hidden')
+          boxEl.textContent = '데이터를 불러오지 못했습니다'
+          return
+        }
+        const detail = await res.json()
+        const ledger = (detail.ledger || []).map((move) => `<tr class="border-b border-edge-soft"><td class="px-2 py-1">${escHtml(move.kind)}</td><td class="px-2 py-1 text-right tabular-nums">${money(move.amount)}</td><td class="px-2 py-1 text-right tabular-nums">${money(move.balanceAfter)}</td><td class="px-2 py-1">${escHtml(move.reason)}</td><td class="px-2 py-1 text-muted">${escHtml(String(move.createdAt).replace('T', ' ').slice(0, 16))}</td></tr>`).join('')
+        boxEl.classList.remove('hidden')
+        boxEl.innerHTML = `<div class="font-bold mb-2">배팅 #${detail.id} 원장</div><table class="w-full text-sm"><thead class="text-xs text-muted"><tr><th class="px-2 py-1 text-left">종류</th><th class="px-2 py-1 text-right">금액</th><th class="px-2 py-1 text-right">잔액</th><th class="px-2 py-1 text-left">사유</th><th class="px-2 py-1 text-left">시각</th></tr></thead><tbody>${ledger || '<tr><td class="px-2 py-3 text-dim" colspan="5">원장 기록이 없습니다.</td></tr>'}</tbody></table>`
+      })
+    })
+  }
+
+  box.innerHTML = '<div id="bet-history-root" class="rounded-xl border border-edge bg-card p-10 text-center text-sm text-dim">불러오는 중</div>'
+  load(false)
+  return true
+}
+
 function init() {
   boardLayout()
   paintTopSums()
-  const rendered = renderPlaceholder()
+  const rendered = mountBetHistory() || renderPlaceholder()
   stampDemoMarks()
   markCart()
   paintSlip('sync')

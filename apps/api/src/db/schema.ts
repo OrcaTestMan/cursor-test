@@ -27,6 +27,7 @@ export const betStatus = pgEnum('nex_bet_status', [
   '적중',
   '미적중',
   '취소',
+  '적특',
 ])
 export const casinoKind = pgEnum('nex_casino_kind', ['live', 'slot', 'other'])
 export const reviewRec = pgEnum('nex_review_rec', [
@@ -157,6 +158,7 @@ export const bets = pgTable(
     potentialPayout: bigint('potential_payout', { mode: 'number' }).notNull(),
     status: betStatus('status').notNull().default('진행 중'),
     matchLive: boolean('match_live').notNull().default(false),
+    folderKind: varchar('folder_kind', { length: 10 }).notNull().default('single'),
     settlementRevision: integer('settlement_revision').notNull().default(0),
     placedAt: timestamp('placed_at', { withTimezone: true })
       .notNull()
@@ -167,6 +169,12 @@ export const bets = pgTable(
     index('nex_bets_user_idx').on(t.userId),
     index('nex_bets_status_idx').on(t.status),
     index('nex_bets_match_idx').on(t.matchName),
+    index('nex_bets_placed_id_idx').on(t.placedAt, t.id),
+    index('nex_bets_folder_kind_idx').on(t.folderKind),
+    index('nex_bets_sport_idx').on(t.sport),
+    index('nex_bets_league_idx').on(t.league),
+    index('nex_bets_live_idx').on(t.matchLive),
+    index('nex_bets_stake_idx').on(t.stake),
   ],
 )
 
@@ -440,6 +448,13 @@ export const betLegs = pgTable(
     }),
     oddsAtBet: numeric('odds_at_bet', { precision: 12, scale: 4 }).notNull(),
     line: varchar('line', { length: 40 }).notNull().default('-'),
+    matchName: varchar('match_name', { length: 200 }).notNull().default(''),
+    marketName: varchar('market_name', { length: 80 }).notNull().default(''),
+    outcomeName: varchar('outcome_name', { length: 80 }).notNull().default(''),
+    sport: varchar('sport', { length: 60 }).notNull().default(''),
+    league: varchar('league', { length: 120 }).notNull().default(''),
+    live: boolean('live').notNull().default(false),
+    status: varchar('status', { length: 20 }).notNull().default('진행 중'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

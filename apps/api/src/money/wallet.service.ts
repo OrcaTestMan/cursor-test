@@ -45,6 +45,7 @@ export const MoneyRef = {
   betWinReverse: 'bet_win_reverse',
   betCancel: 'bet_cancel',
   betCancelReverse: 'bet_cancel_reverse',
+  betPush: 'bet_push',
   casinoPlace: 'casino_place',
   casinoWin: 'casino_win',
   casinoCancel: 'casino_cancel',

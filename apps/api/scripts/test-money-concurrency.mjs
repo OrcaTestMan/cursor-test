@@ -16,8 +16,8 @@ async function json(res) {
 async function main() {
   const users = await json(await fetch(`${BASE}/users?range=all`))
   if (users.status !== 200) throw new Error(`users failed: ${JSON.stringify(users)}`)
-  const test = users.body.items.find((u) => u.login === 'test')
-  if (!test) throw new Error('test user missing')
+  const test = users.body.items.find((u) => u.login === 'leesu')
+  if (!test) throw new Error('leesu user missing')
 
   // --- 멱등: 입금 승인 동일 키 2회 ---
   const deposit = await json(

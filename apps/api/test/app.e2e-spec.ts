@@ -73,7 +73,13 @@ const KNOWN_API_ROUTES = [
   ['PUT', '/api/risk/settings'],
   ['GET', '/api/risk/stream'],
   ['GET', '/api/auth/me'],
+  ['GET', '/api/auth/otp'],
+  ['PATCH', '/api/auth/otp'],
   ['POST', '/api/auth/logout'],
+  ['GET', '/api/bet-history'],
+  ['GET', '/api/bet-history/summary'],
+  ['GET', '/api/bet-history/export.csv'],
+  ['GET', '/api/bet-history/:id'],
 ] as const
 
 function collectRoutes(app: INestApplication) {
@@ -110,7 +116,8 @@ function samplePath(path: string) {
 function isPublic(method: string, path: string) {
   return (
     (method === 'GET' && path === '/api/health') ||
-    (method === 'POST' && path === '/api/auth/login')
+    (method === 'POST' && path === '/api/auth/login') ||
+    (method === 'GET' && path === '/api/auth/otp')
   )
 }
 
@@ -249,6 +256,39 @@ describe.sequential('관리자 세션 (e2e)', () => {
     expect(JSON.stringify(users.body)).not.toMatch(/passwordHash/)
   })
 
+  it('배팅 내역은 로그인 없이 401, 상담원은 조회만 된다', async () => {
+    const no = await request(app.getHttpServer()).get('/api/bet-history?range=all')
+    expect(no.status).toBe(401)
+    const cookie = await login(app, agent)
+    const list = await request(app.getHttpServer())
+      .get('/api/bet-history?range=all')
+      .set('Cookie', cookie)
+    expect(list.status).toBe(200)
+    expect(Array.isArray(list.body.items)).toBe(true)
+    const sum = await request(app.getHttpServer())
+      .get('/api/bet-history/summary?range=all')
+      .set('Cookie', cookie)
+    expect(sum.status).toBe(200)
+    expect(sum.body).toEqual(
+      expect.objectContaining({
+        count: expect.any(Number),
+        totalStake: expect.any(Number),
+        totalPaid: expect.any(Number),
+        companyPnl: expect.any(Number),
+      }),
+    )
+    const csv = await request(app.getHttpServer())
+      .get('/api/bet-history/export.csv?range=all')
+      .set('Cookie', cookie)
+    expect(csv.status).toBe(200)
+    expect(String(csv.headers['content-type'] || '')).toMatch(/csv/)
+    const write = await request(app.getHttpServer())
+      .post('/api/bet-history')
+      .set('Cookie', cookie)
+      .set('Origin', originOf())
+    expect([403, 404]).toContain(write.status)
+  })
+
   it('상담원은 잔액 조정이 403', async () => {
     const cookie = await login(app, agent)
     const origin = originOf()
@@ -291,6 +331,50 @@ describe.sequential('관리자 세션 (e2e)', () => {
       .set('Cookie', cookie)
     expect(me.status).toBe(401)
     auth.now = () => Date.now()
+  })
+
+  it('OTP off면 코드 없이 로그인되고, 상담원은 바꾸지 못한다', async () => {
+    const origin = originOf()
+    const open = await request(app.getHttpServer()).get('/api/auth/otp')
+    expect(open.status).toBe(200)
+    expect(open.body.required).toBe(true)
+
+    const agentCookie = await login(app, agent)
+    const denied = await request(app.getHttpServer())
+      .patch('/api/auth/otp')
+      .set('Cookie', agentCookie)
+      .set('Origin', origin)
+      .send({ required: false })
+    expect(denied.status).toBe(403)
+
+    const cookie = await login(app, boss)
+    const off = await request(app.getHttpServer())
+      .patch('/api/auth/otp')
+      .set('Cookie', cookie)
+      .set('Origin', origin)
+      .send({ required: false })
+    expect(off.status).toBe(200)
+    expect(off.body.required).toBe(false)
+
+    const noCode = await request(app.getHttpServer()).post('/api/auth/login').send({
+      login: boss.login,
+      password: boss.password,
+    })
+    expect(noCode.status).toBe(200)
+
+    const on = await request(app.getHttpServer())
+      .patch('/api/auth/otp')
+      .set('Cookie', cookie)
+      .set('Origin', origin)
+      .send({ required: true })
+    expect(on.status).toBe(200)
+    expect(on.body.required).toBe(true)
+
+    const again = await request(app.getHttpServer()).post('/api/auth/login').send({
+      login: boss.login,
+      password: boss.password,
+    })
+    expect(again.status).toBe(401)
   })
 
   it('로그아웃 후 me 는 401', async () => {

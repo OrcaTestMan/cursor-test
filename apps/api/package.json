@@ -21,6 +21,7 @@
     "money:concurrency": "node scripts/test-money-concurrency.mjs",
     "money:verify-daily": "node scripts/money-verify-daily.mjs",
     "risk:verify-screen": "node scripts/risk-screen-verify.mjs",
+    "bet-history:verify": "node scripts/bet-history-verify.mjs",
     "seed:ops": "node scripts/seed-ops.mjs",
     "admin:create": "node --env-file=.env scripts/create-admin.mjs",
     "test:step2": "node scripts/test-step2-fix.mjs",
