@@ -200,9 +200,35 @@ async function waitHealth(maxMs = HEALTH_TIMEOUT_MS) {
   return false
 }
 
+function sleepSeconds(sec) {
+  spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-Command', `Start-Sleep -Seconds ${sec}`],
+    { shell: true },
+  )
+}
+
 function restartApi() {
   const nssm = findNssm()
-  run(nssm, ['restart', 'nex-api'])
+  // crash loop 후 SERVICE_PAUSED 대비: stop → continue → start
+  spawnSync(nssm, ['stop', 'nex-api'], { cwd: ROOT, shell: true, encoding: 'utf8' })
+  sleepSeconds(2)
+  spawnSync(nssm, ['continue', 'nex-api'], { cwd: ROOT, shell: true, encoding: 'utf8' })
+  const start = spawnSync(nssm, ['start', 'nex-api'], {
+    cwd: ROOT,
+    shell: true,
+    encoding: 'utf8',
+  })
+  if (start.status === 0) return
+  const restart = spawnSync(nssm, ['restart', 'nex-api'], {
+    cwd: ROOT,
+    shell: true,
+    encoding: 'utf8',
+  })
+  if (restart.status !== 0) {
+    const detail = `${start.stderr || ''} ${restart.stderr || ''} ${restart.stdout || ''}`.trim()
+    throw new Error(`nssm start/restart nex-api failed: ${detail.slice(0, 500)}`)
+  }
 }
 
 function checkoutSha(sha) {
@@ -251,7 +277,13 @@ async function rollbackWithRestart(prevSha, failedSha, reason) {
   console.error('health failed → rollback + rebuild + restart')
   checkoutSha(prevSha)
   installAndBuild()
-  restartApi()
+  try {
+    restartApi()
+  } catch (err) {
+    console.error('rollback restart attempt 1 failed, retry:', err?.message || err)
+    sleepSeconds(3)
+    restartApi()
+  }
   const ok = await waitHealth()
   writeFailedSha(failedSha)
   if (!ok) {
@@ -360,10 +392,20 @@ async function main() {
       return
     }
 
-    restartApi()
-    const ok = await waitHealth()
+    let restartOk = false
+    try {
+      restartApi()
+      restartOk = true
+    } catch (err) {
+      console.error('API restart failed after build:', err?.message || err)
+    }
+    const ok = restartOk && (await waitHealth())
     if (!ok) {
-      await rollbackWithRestart(prevSha, remoteSha, 'health_timeout')
+      await rollbackWithRestart(
+        prevSha,
+        remoteSha,
+        restartOk ? 'health_timeout' : 'restart_failed',
+      )
       return
     }
 
