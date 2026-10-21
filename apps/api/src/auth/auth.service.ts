@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   UnauthorizedException,
@@ -13,6 +14,7 @@ import {
   adminAuditLogs,
   adminSessions,
   admins,
+  auditLogs,
   settings,
 } from '../db/schema.js'
 import { ADMIN_ROLE_LABEL, type AdminRole } from './admin-roles.js'
@@ -312,7 +314,32 @@ export class AuthService {
     }
   }
 
-  async setOtpRequired(required: boolean) {
+  async setOtpRequired(actor: AdminActor, required: boolean, totp?: string) {
+    const current = await this.otpRequired()
+    if (current === required) {
+      return { required }
+    }
+    if (!required) {
+      const token = String(totp || '').trim()
+      if (!/^\d{6}$/.test(token)) {
+        throw new BadRequestException('OTP 코드 6자리가 필요합니다.')
+      }
+      const [admin] = await this.db
+        .select({ totpSecret: admins.totpSecret })
+        .from(admins)
+        .where(eq(admins.id, actor.id))
+        .limit(1)
+      if (!admin) throw new UnauthorizedException('로그인이 필요합니다.')
+      let totpOk = false
+      try {
+        totpOk = verifySync({ secret: admin.totpSecret, token }).valid
+      } catch {
+        totpOk = false
+      }
+      if (!totpOk) {
+        throw new UnauthorizedException('OTP 코드가 올바르지 않습니다.')
+      }
+    }
     const value = required ? '1' : '0'
     const [row] = await this.db
       .select({ key: settings.key })
@@ -327,6 +354,13 @@ export class AuthService {
     } else {
       await this.db.insert(settings).values({ key: OTP_SETTING_KEY, value })
     }
+    await this.db.insert(auditLogs).values({
+      actor: actor.login.slice(0, 80),
+      targetType: 'setting',
+      targetId: OTP_SETTING_KEY.slice(0, 40),
+      action: required ? 'otp_on' : 'otp_off',
+      reason: required ? '관리자 로그인 OTP 사용' : '관리자 로그인 OTP 해제',
+    })
     return { required }
   }
 

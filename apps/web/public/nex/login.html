@@ -19,14 +19,14 @@
 <body>
   <form id="login-form">
     <h1>관리자 로그인</h1>
-    <p id="login-hint">아이디, 비밀번호, 2단계 인증 코드가 필요합니다.</p>
+    <p>아이디, 비밀번호, 2단계 인증 코드를 입력합니다.</p>
     <label for="login">아이디</label>
     <input id="login" name="login" autocomplete="username" required />
     <label for="password">비밀번호</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required />
-    <div id="totp-wrap">
+    <div>
       <label for="totp">2단계 인증 코드</label>
-      <input id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" required maxlength="8" />
+      <input id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" />
     </div>
     <button type="submit">로그인</button>
     <div class="err" id="err"></div>
@@ -34,18 +34,6 @@
   <script>
     fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
       if (res.ok) location.replace('/nex/dashboard.html')
-    }).catch(() => {})
-    fetch('/api/auth/otp', { credentials: 'include' }).then(async (res) => {
-      if (!res.ok) return
-      const data = await res.json()
-      if (data.required === false) {
-        const wrap = document.getElementById('totp-wrap')
-        const input = document.getElementById('totp')
-        const hint = document.getElementById('login-hint')
-        if (wrap) wrap.hidden = true
-        if (input) input.required = false
-        if (hint) hint.textContent = '아이디와 비밀번호가 필요합니다.'
-      }
     }).catch(() => {})
     document.getElementById('login-form').addEventListener('submit', async (event) => {
       event.preventDefault()

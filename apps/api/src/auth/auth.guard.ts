@@ -18,7 +18,6 @@ function isPublicApi(req: Request) {
   if (method === 'OPTIONS') return true
   if (method === 'GET' && path === '/api/health') return true
   if (method === 'POST' && path === '/api/auth/login') return true
-  if (method === 'GET' && (path === '/api/auth/otp' || path === '/auth/otp')) return true
   return false
 }
 

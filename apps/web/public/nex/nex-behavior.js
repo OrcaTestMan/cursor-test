@@ -14,7 +14,7 @@
         if (name) {
           name.innerHTML = `${me.nick}<span class="font-normal text-muted">(${me.login})</span>`
         }
-        mountOtpToggle(me)
+        mountSettingsOtp(me)
         document.querySelectorAll('aside button').forEach((btn) => {
           if (!/로그아웃/.test(btn.textContent || '')) return
           btn.addEventListener('click', async (event) => {
@@ -46,13 +46,14 @@ function redirectIfAuthLost(res) {
 
 function otpToggleClass(active) {
   return active
-    ? 'h-7 min-w-7 rounded-full px-2 text-[11px] font-black transition-colors bg-accent text-bg'
-    : 'h-7 min-w-7 rounded-full px-2 text-[11px] font-black transition-colors text-muted hover:text-fg'
+    ? 'h-8 min-w-10 rounded-full px-3 text-[12px] font-black transition-colors bg-accent text-bg'
+    : 'h-8 min-w-10 rounded-full px-3 text-[12px] font-black transition-colors text-muted hover:text-fg'
 }
 
 function paintOtpToggle(root, required) {
   const on = root.querySelector('[data-otp="on"]')
   const off = root.querySelector('[data-otp="off"]')
+  const confirm = root.querySelector('[data-otp-confirm]')
   if (on) {
     on.setAttribute('aria-pressed', required ? 'true' : 'false')
     on.className = otpToggleClass(required)
@@ -61,55 +62,54 @@ function paintOtpToggle(root, required) {
     off.setAttribute('aria-pressed', required ? 'false' : 'true')
     off.className = otpToggleClass(!required)
   }
+  if (confirm) confirm.hidden = !required
 }
 
-function mountOtpToggle(me) {
-  const lang = document.querySelector('header [aria-label^="팀명 언어"]')
-  const bar = lang?.parentElement || document.querySelector('header .flex.items-center.gap-2\\.5')
-  let group = document.querySelector('[data-otp-toggle]')
-  if (!group) {
-    if (!bar) return
-    group = document.createElement('div')
-    group.dataset.otpToggle = '1'
-    group.className = 'flex h-9 items-center rounded-full border border-edge pl-2.5 pr-1 gap-1'
-    group.setAttribute('role', 'group')
-    group.setAttribute('aria-label', 'OTP')
-    group.title = '관리자 로그인 구글 OTP. on이면 코드 필수, off면 아이디·비밀번호만.'
-    group.innerHTML = `<span class="pr-1 text-[11px] font-bold text-muted" aria-hidden="true">OTP</span><button type="button" data-otp="on" aria-pressed="true" class="${otpToggleClass(true)}">on</button><button type="button" data-otp="off" aria-pressed="false" class="${otpToggleClass(false)}">off</button>`
-    if (lang) bar.insertBefore(group, lang)
-    else bar.prepend(group)
-  }
-  if (group.dataset.otpBound === '1') return
-  group.dataset.otpBound = '1'
-  const canEdit = me?.role === 'superadmin' || me?.role === 'operator'
+function mountSettingsOtp(me) {
+  document.querySelectorAll('header [data-otp-toggle], [data-otp-toggle]').forEach((el) => el.remove())
+  if (!/\/nex\/settings\.html$/i.test(location.pathname)) return
+  if (me?.role !== 'superadmin') return
+  const box = document.querySelector('main .space-y-4')
+  if (!box || box.querySelector('[data-otp-settings]')) return
+  const card = document.createElement('section')
+  card.dataset.otpSettings = '1'
+  card.className = 'bg-card border border-edge rounded-xl overflow-hidden'
+  card.innerHTML = `<div class="flex items-center justify-between gap-3 border-b border-edge-soft px-4 py-3"><h2 class="text-sm font-bold text-fg">관리자 로그인 OTP</h2></div><div class="space-y-3 p-4"><p class="text-sm text-dim">최고관리자만 바꿀 수 있습니다. 끄려면 현재 OTP 6자리를 다시 입력합니다.</p><div class="flex h-10 items-center gap-1 rounded-full border border-edge px-1" role="group" aria-label="OTP"><button type="button" data-otp="on" aria-pressed="true" class="${otpToggleClass(true)}">on</button><button type="button" data-otp="off" aria-pressed="false" class="${otpToggleClass(false)}">off</button></div><label data-otp-confirm hidden class="block max-w-xs"><span class="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-muted">OTP 6자리</span><input data-otp-totp inputmode="numeric" autocomplete="one-time-code" maxlength="6" class="h-10 w-full rounded-lg border border-edge bg-input px-3 text-sm font-bold text-fg" /></label></div>`
+  box.prepend(card)
   fetch('/api/auth/otp', { credentials: 'include' })
     .then(async (res) => {
+      if (redirectIfAuthLost(res)) return
       if (!res.ok) throw new Error('otp')
       return res.json()
     })
-    .then((data) => paintOtpToggle(group, data.required !== false))
-    .catch(() => {})
-  group.addEventListener('click', async (event) => {
+    .then((data) => {
+      if (!data) return
+      paintOtpToggle(card, data.required !== false)
+    })
+    .catch(() => toast('데이터를 불러오지 못했습니다'))
+  card.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-otp]')
     if (!button) return
-    if (!canEdit) {
-      toast('권한이 없습니다.')
-      return
-    }
     const required = button.dataset.otp === 'on'
+    const totp = card.querySelector('[data-otp-totp]')
     const res = await fetch('/api/auth/otp', {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ required }),
+      body: JSON.stringify({
+        required,
+        totp: required ? undefined : String(totp?.value || '').trim(),
+      }),
     })
     if (!res.ok) {
       if (redirectIfAuthLost(res)) return
-      toast(res.status === 403 ? '권한이 없습니다.' : '데이터를 불러오지 못했습니다')
+      const data = await res.json().catch(() => ({}))
+      toast(data.message || (res.status === 403 ? '권한이 없습니다.' : '데이터를 불러오지 못했습니다'))
       return
     }
     const data = await res.json()
-    paintOtpToggle(group, data.required !== false)
+    paintOtpToggle(card, data.required !== false)
+    if (totp) totp.value = ''
     toast(data.required ? 'OTP on' : 'OTP off')
   })
 }

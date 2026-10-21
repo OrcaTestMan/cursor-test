@@ -10,7 +10,8 @@ import { AuthService } from './../src/auth/auth.service.js'
 import { IDLE_MS } from './../src/auth/auth.constants.js'
 import { migrateOnBoot } from './../src/db/migrate-on-boot.js'
 import { DbService } from './../src/db/db.service.js'
-import { admins } from './../src/db/schema.js'
+import { admins, auditLogs } from './../src/db/schema.js'
+import { eq } from 'drizzle-orm'
 import { setupApp } from './../src/setup-app.js'
 
 type AdminSeed = {
@@ -116,8 +117,7 @@ function samplePath(path: string) {
 function isPublic(method: string, path: string) {
   return (
     (method === 'GET' && path === '/api/health') ||
-    (method === 'POST' && path === '/api/auth/login') ||
-    (method === 'GET' && path === '/api/auth/otp')
+    (method === 'POST' && path === '/api/auth/login')
   )
 }
 
@@ -333,28 +333,51 @@ describe.sequential('관리자 세션 (e2e)', () => {
     auth.now = () => Date.now()
   })
 
-  it('OTP off면 코드 없이 로그인되고, 상담원은 바꾸지 못한다', async () => {
+  it('OTP는 최고관리자만 바꾸고, 끌 때는 코드와 감사 로그가 필요하다', async () => {
     const origin = originOf()
     const open = await request(app.getHttpServer()).get('/api/auth/otp')
-    expect(open.status).toBe(200)
-    expect(open.body.required).toBe(true)
+    expect(open.status).toBe(401)
 
     const agentCookie = await login(app, agent)
+    const agentGet = await request(app.getHttpServer())
+      .get('/api/auth/otp')
+      .set('Cookie', agentCookie)
+    expect(agentGet.status).toBe(403)
     const denied = await request(app.getHttpServer())
       .patch('/api/auth/otp')
       .set('Cookie', agentCookie)
       .set('Origin', origin)
-      .send({ required: false })
+      .send({ required: false, totp: agent.totp() })
     expect(denied.status).toBe(403)
 
     const cookie = await login(app, boss)
-    const off = await request(app.getHttpServer())
+    const missing = await request(app.getHttpServer())
       .patch('/api/auth/otp')
       .set('Cookie', cookie)
       .set('Origin', origin)
       .send({ required: false })
+    expect(missing.status).toBe(400)
+
+    const wrong = await request(app.getHttpServer())
+      .patch('/api/auth/otp')
+      .set('Cookie', cookie)
+      .set('Origin', origin)
+      .send({ required: false, totp: '000000' })
+    expect(wrong.status).toBe(401)
+
+    const off = await request(app.getHttpServer())
+      .patch('/api/auth/otp')
+      .set('Cookie', cookie)
+      .set('Origin', origin)
+      .send({ required: false, totp: boss.totp() })
     expect(off.status).toBe(200)
     expect(off.body.required).toBe(false)
+
+    const logs = await app.get(DbService).db
+      .select({ action: auditLogs.action, actor: auditLogs.actor })
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'otp_off'))
+    expect(logs.some((row) => row.actor === boss.login)).toBe(true)
 
     const noCode = await request(app.getHttpServer()).post('/api/auth/login').send({
       login: boss.login,
